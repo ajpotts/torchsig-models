@@ -1,0 +1,48 @@
+name: Bug Report
+description: File a bug report.
+title: "[Bug] "
+labels:
+  - "type: bug"
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        Before you open an issue, be sure to check the following:
+        [Issues](https://github.com/TorchDSP/torchsig-models/issues)
+
+        **Please only report bugs for the codebase. Use our [Discussions](https://github.com/TorchDSP/torchsig-models/discussions) page for questions about usage or installation.**
+  - type: dropdown
+    id: version
+    attributes:
+      label: Version
+      description: What version of TorchSig Models?
+      options:
+        - 1.0.0 (Default)
+        - Other
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: os-system
+    attributes:
+      label: System Information
+      description: Include any relevent information about OS, environment, etc.
+      value: |
+        OS: (Linux Distro, Mac, Windows)
+        Environment: (Docker, venv, conda, etc)
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe concisely what you expected to happen, what happened, and anything else.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to Reproduce the Bug
+      description: Describe how to reproduce this bug.
+    validations:
+      required: true

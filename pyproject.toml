@@ -1,0 +1,117 @@
+[build-system]
+
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torchsig-models"
+description = "Pre-trained models and utilities for TorchSig signal processing"
+authors = [
+    {name = "TorchSig Team"},
+]
+maintainers = [
+    {name = "TorchSig Team"},
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = [
+    "signal processing",
+    "machine learning",
+    "deep learning",
+    "radio",
+    "communications",
+    "classification",
+    "detection",
+    "torchsig",
+    "pytorch",
+]
+dynamic = ["version"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: Pytorch",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    # Core Libraries
+    "numpy>=1.24,<2.4",
+    "opencv-python-headless>=4.8",
+    # baseline torchsig installation
+    "torchsig>=2.1.1,<3.0",
+    # additional packages
+    "torchmetrics>=1.0",
+    "timm>=0.9",
+    "tensorboardX>=2.6",
+    "ultralytics>=8.4",
+    "anomalib>=1.0",
+]
+
+
+# === OPTIONAL DEVELOPMENT DEPENDENCIES (What developers need) ===
+[project.optional-dependencies]
+dev = [
+    # Testing & Linting
+    "pytest>=7.4",
+    "pylint>=3.0",
+    "pytest-cov>=4.1",
+    "pytest-benchmark>=4.0",
+    "pytest-json-report>=1.5",
+    "pytest-xdist>=3.5",
+    "ruff>=0.1",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=1.3",
+    "myst-parser>=2.0",
+]
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-benchmark>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/TorchDSP/torchsig-models"
+Documentation = "https://github.com/TorchDSP/torchsig-models#readme"
+Repository = "https://github.com/TorchDSP/torchsig-models.git"
+Issues = "https://github.com/TorchDSP/torchsig-models/issues"
+Changelog = "https://github.com/TorchDSP/torchsig-models/releases"
+
+[tool.setuptools.packages.find]
+# Automatically find all packages starting in root directory
+where = ["."]
+
+[tool.setuptools.dynamic]
+# Dynamically read version from torchsig.__version__
+version = {attr = "torchsig_models.__version__"}
+
+[tool.coverage.run]
+branch = true
+source = ["torchsig_models"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+omit = []
+
+[tool.pytest.ini_options]
+addopts = "--cov=torchsig_models --cov-report=xml --cov-report=term --junitxml=report.xml"
+testpaths = ["tests"]
+markers = [
+    "slow: skipped in fast mode",
+    "slow_no_gpu: skipped in fast mode only when no GPU is available",
+]

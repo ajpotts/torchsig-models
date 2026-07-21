@@ -1,0 +1,103 @@
+# Docker ignore file for torchsig-models
+# Exclude files and directories that are not needed in the Docker image
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Documentation
+*.md
+*.rst
+*.txt
+
+# Large model files (do not include in image)
+*.pt
+*.pth
+*.h5
+*.npz
+*.zarr
+*.safetensors
+
+# Data files
+data/
+*.csv
+*.json
+*.npy
+*.npz
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker/
+.dockerignore
+
+# Build artifacts
+*.tar.gz
+*.zip
+*.tar
+
+# Local configuration
+.env
+.env.local
+*.local
+
+# Test and example files
+examples/
+notebooks/
+
+# Output files
+*.out
+*.output
+
+# Temporary files
+*.tmp
+*.temp

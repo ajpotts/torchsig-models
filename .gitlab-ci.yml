@@ -1,0 +1,144 @@
+# .gitlab-ci.yml
+stages:
+  - pipeline
+
+variables:
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_TLS_CERTDIR: ""
+  UV_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/uv"
+
+.test:
+  stage: pipeline
+  image: $CI_REGISTRY_IMAGE:main
+  needs: ["build-pip"]
+  cache:
+    key:
+      prefix: $CI_COMMIT_REF_SLUG
+      files:
+        - pyproject.toml
+        - tests/test_narrowband_config.yaml
+    paths:
+      - .cache-uv.tar.zst
+      - .pytest_cache/torchsig_data/
+    policy: pull-push
+  before_script:
+    - export TORCHSIG_TEST_DATA_CACHE="$CI_PROJECT_DIR/.pytest_cache/torchsig_data"
+    - python -V
+    - |
+      if [ -f ".cache-uv.tar.zst" ]; then
+        echo "Restoring wheel cache ..."
+        zstd -d -c .cache-uv.tar.zst | tar -xf -
+      fi
+    - command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -e ".[dev]"
+    - uv pip uninstall opencv-python opencv-python-headless || true
+    - uv pip install opencv-python-headless==4.12.0.88
+    - uv pip install pylint pytest pytest-cov pylint-gitlab pylint-junit
+
+# Build and cache dependencies
+build-pip:
+  stage: pipeline
+  image: $CI_REGISTRY_IMAGE:main
+  cache:
+    key:
+      prefix: $CI_COMMIT_REF_SLUG
+      files:
+        - pyproject.toml
+    paths:
+      - .cache-uv.tar.zst
+    policy: pull-push  
+  needs: []
+  before_script:
+    - |
+      if [ -f ".cache-uv.tar.zst" ]; then
+        echo "Restoring wheel cache ..."
+        zstd -d -c .cache-uv.tar.zst | tar -xf -
+      fi
+    - command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+    - uv venv .venv
+    - source .venv/bin/activate
+  script:
+    - uv pip install -e ".[dev]"
+    - uv pip uninstall opencv-python opencv-python-headless || true
+    - uv pip install opencv-python-headless==4.12.0.88
+    - uv pip install pylint pytest pytest-cov pylint-gitlab pylint-junit
+
+    - |
+      if [ -d ".cache" ]; then
+        tar -cf - .cache | zstd -1 -T0 > .cache-uv.tar.zst
+      fi
+
+# Test: Run Pylint and Pytest on Code -------------------------------
+pylint:
+  extends: .test
+  script:
+    - pylint --rcfile=.pylintrc --output-format=pylint_junit.JUnitReporter:${CI_PROJECT_DIR}/pylint-report.xml,pylint_gitlab.GitlabCodeClimateReporter:${CI_PROJECT_DIR}/code-climate.json torchsig_models/
+  allow_failure: false
+  artifacts:
+    when: always
+    reports:
+      junit: pylint-report.xml
+      codequality: code-climate.json
+
+pytest:
+  extends: .test
+  tags:
+    - "gpu"
+  before_script:
+    - export TORCHSIG_TEST_DATA_CACHE="$CI_PROJECT_DIR/.pytest_cache/torchsig_data"
+    - echo "TORCHSIG_TEST_DATA_CACHE=$TORCHSIG_TEST_DATA_CACHE"
+    - find "$TORCHSIG_TEST_DATA_CACHE" -maxdepth 4 -type f | head -50 || true
+    - du -sh "$TORCHSIG_TEST_DATA_CACHE" || true
+    - python -c "import os, torch; print(os.cpu_count()); print(torch.cuda.is_available())"
+    - nvidia-smi || echo "nvidia-smi failed (No GPU or drivers missing)"
+  script:
+    - pip show opencv-python || true
+    - pip show opencv-python-headless
+    - make test
+  allow_failure: false
+  artifacts:
+    when: on_success
+    paths:
+      - report.xml
+      - coverage.xml
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  coverage: '/TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+
+# build and publish docker image
+build-publish-dockerfile:
+  stage: pipeline
+  needs: ["build-pip"]
+  image: docker:24.0.5
+  services:
+    - name: docker:24.0.5-dind
+  rules:
+    # only manual/scheduled trigger
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+  variables:
+    DOCKER_BUILDKIT: 1
+    IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME"
+  before_script:
+    - apk add --no-cache git
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build
+      --cache-from "$CI_REGISTRY_IMAGE:latest"
+      --cache-from "$CI_REGISTRY_IMAGE:main" 
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t "$IMAGE_TAG"
+      -f docker/Dockerfile
+      .
+    - docker push "$IMAGE_TAG"
+
+    - |
+      if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
+        docker tag "$IMAGE_TAG" "$CI_REGISTRY_IMAGE:latest"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
