@@ -192,8 +192,6 @@ def prepare_torchsig_datasets(
         ),
         {"root": str(root)},
     )
-
-
 def prepare_torchsig_inference_dataset(
     root: str | Path,
     *,

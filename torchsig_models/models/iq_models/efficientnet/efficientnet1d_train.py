@@ -21,7 +21,7 @@ from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.utils.yaml import load_config_from_yaml
 
-from torchsig_models.models.iq_models.efficientnet import (
+from torchsig_models.models.iq_models.efficientnet.efficientnet1d import (
     efficientnet_b0,
     efficientnet_b2,
     efficientnet_b4,
