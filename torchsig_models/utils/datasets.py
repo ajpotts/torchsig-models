@@ -1,4 +1,5 @@
 """Dataset and dataloader utilities for TorchSig model training."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +21,6 @@ from torchsig.transforms.transforms import (
 from torchsig.utils.data_loading import WorkerSeedingDataLoader
 from torchsig.utils.defaults import TorchSigDefaults
 from torchsig.utils.writer import DatasetCreator
-
 
 
 __all__ = ["prepare_torchsig_datasets"]
@@ -75,6 +75,7 @@ def _create_static_dataset(
         root=str(split_root),
         target_labels=getattr(cfg, "target_labels", ["class_index"]),
     )
+
 
 def prepare_torchsig_datasets(
     train_cfg: TorchSigDatasetConfig,

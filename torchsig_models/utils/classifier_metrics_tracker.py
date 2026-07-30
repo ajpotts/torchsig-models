@@ -58,7 +58,9 @@ class ClassifierMetricsTracker:
 
         self.n_classes = n_classes
         self.device = torch.device(
-            device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+            device
+            if device is not None
+            else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.sync_on_compute = sync_on_compute
 
@@ -392,9 +394,7 @@ class ClassifierMetricsTracker:
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
         ax.set_title(
-            "Confusion Matrix (Normalized)"
-            if normalize
-            else "Confusion Matrix"
+            "Confusion Matrix (Normalized)" if normalize else "Confusion Matrix"
         )
 
         fig.tight_layout()

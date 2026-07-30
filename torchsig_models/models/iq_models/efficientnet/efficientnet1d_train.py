@@ -72,18 +72,12 @@ def load_training_params(
         FileNotFoundError: If the parameter file does not exist.
     """
     if params_path is None:
-        params_path = (
-            Path(__file__).parent
-            / "training_params"
-            / f"{model_name}.yaml"
-        )
+        params_path = Path(__file__).parent / "training_params" / f"{model_name}.yaml"
     else:
         params_path = Path(params_path)
 
     if not params_path.exists():
-        raise FileNotFoundError(
-            f"Training parameter file not found: {params_path}"
-        )
+        raise FileNotFoundError(f"Training parameter file not found: {params_path}")
 
     with params_path.open("r", encoding="utf-8") as params_file:
         return yaml.safe_load(params_file)
@@ -164,7 +158,9 @@ def train_efficientnet_iq(
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    metrics_dir = Path(metrics_dir) if metrics_dir is not None else checkpoint_dir / "metrics"
+    metrics_dir = (
+        Path(metrics_dir) if metrics_dir is not None else checkpoint_dir / "metrics"
+    )
 
     train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
         train_cfg,
@@ -272,10 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--params",
         type=Path,
-        help=(
-            "Training params YAML. Defaults to "
-            "training_params/<model>.yaml."
-        ),
+        help=("Training params YAML. Defaults to training_params/<model>.yaml."),
     )
 
     parser.add_argument(
@@ -398,5 +391,3 @@ if __name__ == "__main__":
     )
 
     print(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")
-
-

@@ -25,6 +25,12 @@ We recommend using Ubuntu or a Docker container for best compatibility.
 
 ### Installation
 
+#### From PyPI (Recommended)
+
+```bash
+pip install torchsig-models
+```
+
 #### From Source
 
 Clone the repository and install in development mode:

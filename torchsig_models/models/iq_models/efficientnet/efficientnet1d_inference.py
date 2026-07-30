@@ -7,6 +7,7 @@ accuracy on the evaluation dataset.
 
 The module can be imported as a library or executed as a command-line script.
 """
+
 from pathlib import Path
 
 import argparse
@@ -24,15 +25,14 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
 from torchsig_models.utils.training import evaluate_classifier, configure_determinism
 
 
-def _strip_lightning_prefix(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _strip_lightning_prefix(
+    state_dict: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
     """Remove Lightning's wrapped-model prefix from checkpoint keys."""
     if not any(key.startswith("model.") for key in state_dict):
         return state_dict
 
-    return {
-        key.removeprefix("model."): value
-        for key, value in state_dict.items()
-    }
+    return {key.removeprefix("model."): value for key, value in state_dict.items()}
 
 
 def efficientnet1d_inference(

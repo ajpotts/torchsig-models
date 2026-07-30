@@ -8,13 +8,13 @@ from torchsig_models.adapters.yolo_utils import get_yolo_model
 
 
 def yolo_train(
-        model_filepath: Path,
-        config: Path,
-        output_dir: Path,
-        run_name: str = "detector_yolo",
-        fft_size: int = 512,
-        num_workers: int = 1,
-        epochs: int = 25
+    model_filepath: Path,
+    config: Path,
+    output_dir: Path,
+    run_name: str = "detector_yolo",
+    fft_size: int = 512,
+    num_workers: int = 1,
+    epochs: int = 25,
 ):
     """Train a YOLO model as a detector.
     Args:
@@ -27,25 +27,27 @@ def yolo_train(
         epochs: Number of epochs to train. Default 25.
     """
 
-    model = YOLO(get_yolo_model(model_filepath)) # get local model, download if necessary
-    
+    model = YOLO(
+        get_yolo_model(model_filepath)
+    )  # get local model, download if necessary
+
     results = model.train(
-        data=config, 
+        data=config,
         epochs=epochs,
         batch=32,
         imgsz=fft_size,
-        device=0 if torch.cuda.is_available() else "cpu", # single gpu
+        device=0 if torch.cuda.is_available() else "cpu",  # single gpu
         workers=num_workers,
         project=output_dir,
         name=run_name,
-        save = True,
+        save=True,
         save_period=1,
         single_cls=True,
-        cos_lr = True,
-        cache = False,
-        lr0 = 0.00001,
-        plots = True,
-        box = 7.5,
-        cls = 0.5,
-        dfl = 1.5
+        cos_lr=True,
+        cache=False,
+        lr0=0.00001,
+        plots=True,
+        box=7.5,
+        cls=0.5,
+        dfl=1.5,
     )

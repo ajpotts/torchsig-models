@@ -10,7 +10,13 @@ from torch import nn
 from timm.layers.norm_act import BatchNormAct2d
 from timm.models._efficientnet_blocks import SqueezeExcite as TimmSqueezeExcite
 
-__all__ = ["efficientnet_b0", "efficientnet_b2", "efficientnet_b4", "NormalizedModel", "IQNormalization"]
+__all__ = [
+    "efficientnet_b0",
+    "efficientnet_b2",
+    "efficientnet_b4",
+    "NormalizedModel",
+    "IQNormalization",
+]
 
 
 PRETRAINED_CHECKPOINTS = {
@@ -28,13 +34,16 @@ PRETRAINED_CHECKPOINTS = {
     # },
 }
 
+
 def normalize_iq(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     mean = x.mean(dim=(-2, -1), keepdim=True)
     std = x.std(dim=(-2, -1), keepdim=True)
     return (x - mean) / (std + eps)
 
+
 class SqueezeExcite1d(nn.Module):
     """1D squeeze-and-excitation block."""
+
     def __init__(
         self,
         in_chs: int,
@@ -68,6 +77,7 @@ class SqueezeExcite1d(nn.Module):
 
 class FastGlobalAvgPool1d(nn.Module):
     """Global average pooling layer for 1D feature maps."""
+
     def __init__(self, flatten: bool = False):
         super().__init__()
         self.flatten = flatten
@@ -116,6 +126,7 @@ class BatchNormAct1d(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.act(self.bn(x))
+
 
 def _batch_norm_act_2d_to_1d(module: BatchNormAct2d) -> BatchNormAct1d:
     replacement = BatchNormAct1d(
@@ -258,6 +269,7 @@ class IQNormalization(nn.Module):
         std = x.std(dim=(-2, -1), keepdim=True)
         return (x - mean) / (std + self.eps)
 
+
 class NormalizedModel(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -266,6 +278,7 @@ class NormalizedModel(nn.Module):
 
     def forward(self, x):
         return self.model(self.normalize(x))
+
 
 def _create_effnet_1d(
     model_name: str,

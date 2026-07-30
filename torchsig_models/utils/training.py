@@ -21,6 +21,7 @@ from torchsig_models.utils.classifier_metrics_tracker import (
 #  Deterministic‑seed helper
 # ==============================================================
 
+
 def set_deterministic(seed: int) -> None:
     """Configure common libraries for reproducible execution.
 
@@ -129,7 +130,6 @@ def compute_class_weights_tensor(
 
     if dataset is not None:
         for _, (_, label) in enumerate(dataset):
-
             if isinstance(label, torch.Tensor):
                 label = label.detach().cpu().reshape(-1).tolist()[0]
             elif isinstance(label, np.ndarray):
@@ -191,6 +191,7 @@ def compute_num_params(model: torch.nn.Module) -> int:
         5560
     """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 class SignalClassifier(pl.LightningModule):
     """Generic PyTorch Lightning wrapper for multiclass classification models.
@@ -337,7 +338,7 @@ class SignalClassifier(pl.LightningModule):
         batch_idx: int,
         *args,
         **kwargs,
-    )  -> dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Execute a single validation step.
 
         Args:
