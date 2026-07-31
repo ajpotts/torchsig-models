@@ -1,6 +1,7 @@
 import os
 import random
 from pathlib import Path
+import logging
 
 import numpy as np
 import pytorch_lightning as pl
@@ -10,12 +11,15 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
 )
+from pytorch_lightning.loggers import Logger
 
 from torchsig_models.utils.classifier_metrics_tracker import (
     ClassifierMetricsTracker,
     ClassifierMetricsTrackerCallback,
 )
 
+
+logger = logging.getLogger(__name__)
 
 # ==============================================================
 #  Deterministic‑seed helper
@@ -299,7 +303,7 @@ class SignalClassifier(pl.LightningModule):
 
         loss = self.criterion(logits, y)
 
-        self.log(f"{phase}_loss", loss, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}_loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return {
             "loss": loss,
@@ -409,6 +413,7 @@ def train_validate(
     gradient_clip_val: float = 1.0,
     enable_progress_bar: bool = True,
     clamp_logits: bool = True,
+    logger: Logger | bool | None = True,
 ) -> tuple[SignalClassifier, ClassifierMetricsTrackerCallback]:
     """Train and validate a multiclass classifier using PyTorch Lightning.
 
@@ -537,6 +542,7 @@ def train_validate(
         enable_progress_bar=enable_progress_bar,
         precision=precision,
         use_distributed_sampler=use_distributed_sampler,
+        logger=logger,
     )
 
     trainer.fit(

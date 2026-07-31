@@ -6,6 +6,7 @@ from torchsig_models.utils.datasets import (
     _dataset_metadata,
     _transforms,
     prepare_torchsig_datasets,
+    prepare_torchsig_inference_dataset,
 )
 
 
@@ -185,3 +186,77 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
         )
 
     assert (root / cfg.dataset_id).exists()
+
+
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_inference_dataset_returns_loader(
+    static_dataset_cls,
+    dataloader_cls,
+    tmp_path,
+):
+    static_dataset = MagicMock()
+    static_dataset_cls.return_value = static_dataset
+
+    loader = MagicMock()
+    dataloader_cls.return_value = loader
+
+    result = prepare_torchsig_inference_dataset(
+        root=tmp_path,
+        batch_size=8,
+        num_workers=2,
+        target_labels=["class_index", "snr_db"],
+        pin_memory=True,
+    )
+
+    static_dataset_cls.assert_called_once_with(
+        root=str(tmp_path),
+        target_labels=["class_index", "snr_db"],
+    )
+    dataloader_cls.assert_called_once_with(
+        static_dataset,
+        batch_size=8,
+        num_workers=2,
+        shuffle=False,
+        pin_memory=True,
+    )
+    assert result is loader
+
+
+@patch("torchsig_models.utils.datasets.torch.cuda.is_available")
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_inference_dataset_uses_defaults(
+    static_dataset_cls,
+    dataloader_cls,
+    cuda_available,
+    tmp_path,
+):
+    cuda_available.return_value = False
+
+    prepare_torchsig_inference_dataset(tmp_path)
+
+    static_dataset_cls.assert_called_once_with(
+        root=str(tmp_path),
+        target_labels=["class_index"],
+    )
+    dataloader_cls.assert_called_once_with(
+        static_dataset_cls.return_value,
+        batch_size=4,
+        num_workers=8,
+        shuffle=False,
+        pin_memory=False,
+    )
+
+
+def test_prepare_torchsig_inference_dataset_raises_for_missing_root(
+    tmp_path,
+):
+    missing_root = tmp_path / "missing"
+
+    try:
+        prepare_torchsig_inference_dataset(missing_root)
+    except FileNotFoundError as error:
+        assert str(missing_root) in str(error)
+    else:
+        raise AssertionError("Expected FileNotFoundError")

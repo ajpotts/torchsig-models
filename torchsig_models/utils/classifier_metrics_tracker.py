@@ -586,11 +586,31 @@ class ClassifierMetricsTrackerCallback(Callback):
             phase: Metric prefix (for example, ``"train"`` or ``"val"``).
             metrics: Dictionary of computed metric values.
         """
-        pl_module.log(f"{phase}_loss", metrics["loss"], on_epoch=True, prog_bar=True)
-        pl_module.log(f"{phase}_acc", metrics["accuracy"], on_epoch=True, prog_bar=True)
-        pl_module.log(f"{phase}_f1", metrics["f1 score"], on_epoch=True, prog_bar=True)
-        pl_module.log(f"{phase}_prec", metrics["precision"], on_epoch=True)
-        pl_module.log(f"{phase}_rec", metrics["recall"], on_epoch=True)
+        pl_module.log(
+            f"{phase}_loss",
+            metrics["loss"],
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        pl_module.log(
+            f"{phase}_acc",
+            metrics["accuracy"],
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        pl_module.log(
+            f"{phase}_f1",
+            metrics["f1 score"],
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        pl_module.log(
+            f"{phase}_prec", metrics["precision"], on_epoch=True, sync_dist=True
+        )
+        pl_module.log(f"{phase}_rec", metrics["recall"], on_epoch=True, sync_dist=True)
 
     def save_to_csv(self, metrics_dir: str | Path | None = None) -> None:
         """Save both training and validation metrics to disk.
