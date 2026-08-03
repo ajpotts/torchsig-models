@@ -1,0 +1,30 @@
+Title: Shuffle the static training dataset between epochs
+Type: Bug
+Priority: Medium
+
+Description
+-----------
+prepare_torchsig_datasets() constructs all three data loaders without an
+explicit shuffle setting. The training loader therefore uses the static
+dataset's stored order on every epoch. Correlated generation order or grouped
+classes can bias optimization and reduce model quality.
+
+Validation and test loaders should remain deterministic and unshuffled.
+
+Relevant code
+-------------
+- torchsig_models/utils/datasets.py
+
+Proposed work
+-------------
+1. Set shuffle=True for the training WorkerSeedingDataLoader.
+2. Set shuffle=False explicitly for validation and test loaders.
+3. Confirm that worker seeding preserves reproducible runs for a fixed seed.
+4. Add tests asserting the sampler behavior of all three loaders.
+
+Acceptance criteria
+-------------------
+- The training loader uses randomized sampling.
+- Validation and test loaders use sequential sampling.
+- Two runs with the same configured seed remain reproducible.
+- Unit tests verify the loader configuration.

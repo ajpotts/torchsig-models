@@ -196,6 +196,7 @@ def train_efficientnet_2d(
         batch_size=params["batch_size"],
         overwrite=overwrite,
         signal_generators=signal_generators,
+        transforms=transforms,
     )
 
     class_list = TorchSigSignalLists.all_signals
@@ -274,7 +275,9 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--config",
         "--dataset-config",
+        dest="config",
         type=Path,
         help=(
             "Default TorchSig dataset config YAML used for train/val/test "
@@ -382,17 +385,17 @@ if __name__ == "__main__":
     args = parse_args()
 
     train_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.train_config,
         "train",
     )
     val_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.val_config,
         "val",
     )
     test_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.test_config,
         "test",
     )

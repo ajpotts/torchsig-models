@@ -99,16 +99,10 @@ def efficientnet_inference(
     )
     state_dict = _strip_lightning_prefix(state_dict)
 
-    missing_keys, unexpected_keys = model.load_state_dict(
+    model.load_state_dict(
         state_dict,
-        strict=False,
+        strict=True,
     )
-
-    if missing_keys:
-        print(f"Missing checkpoint keys: {missing_keys}")
-
-    if unexpected_keys:
-        print(f"Unexpected checkpoint keys: {unexpected_keys}")
 
     model.to(device)
     model.eval()

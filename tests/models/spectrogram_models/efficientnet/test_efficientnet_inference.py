@@ -175,7 +175,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
                 "model.layer.weight"
             ],
         },
-        strict=False,
+        strict=True,
     )
     model.to.assert_called_once_with(
         torch.device("cpu"),
@@ -259,7 +259,7 @@ def test_efficientnet_inference_loads_plain_state_dict(
 
     model.load_state_dict.assert_called_once_with(
         state_dict,
-        strict=False,
+        strict=True,
     )
 
 
@@ -401,12 +401,11 @@ def test_efficientnet_inference_uses_cuda_when_available(
     )
 
 
-def test_efficientnet_inference_reports_checkpoint_key_mismatches(
+def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify missing and unexpected checkpoint keys are reported."""
+    """Verify incompatible checkpoints stop inference."""
     dataset_root = tmp_path / "test"
     dataset_root.mkdir()
 
@@ -420,9 +419,8 @@ def test_efficientnet_inference_reports_checkpoint_key_mismatches(
     )
 
     model = MagicMock()
-    model.load_state_dict.return_value = (
-        ["classifier.weight"],
-        ["old_classifier.weight"],
+    model.load_state_dict.side_effect = RuntimeError(
+        "Missing key(s) and unexpected key(s) in state_dict"
     )
     monkeypatch.setitem(
         inference_module.MODEL_FACTORY,
@@ -455,29 +453,21 @@ def test_efficientnet_inference_reports_checkpoint_key_mismatches(
         ),
     )
 
-    efficientnet_inference(
-        root=dataset_root,
-        checkpoint_path=checkpoint_path,
-    )
+    with pytest.raises(RuntimeError, match="Missing key"):
+        efficientnet_inference(
+            root=dataset_root,
+            checkpoint_path=checkpoint_path,
+        )
 
-    output = capsys.readouterr().out
-
-    assert (
-        "Missing checkpoint keys: ['classifier.weight']"
-        in output
-    )
-    assert (
-        "Unexpected checkpoint keys: ['old_classifier.weight']"
-        in output
-    )
+    model.load_state_dict.assert_called_once_with({}, strict=True)
 
 
-def test_efficientnet_inference_does_not_report_empty_key_lists(
+def test_efficientnet_inference_accepts_matching_checkpoint_keys(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify empty checkpoint mismatch lists are not printed."""
+    """Verify matching checkpoint keys permit inference."""
     dataset_root = tmp_path / "test"
     dataset_root.mkdir()
 
@@ -530,8 +520,8 @@ def test_efficientnet_inference_does_not_report_empty_key_lists(
 
     output = capsys.readouterr().out
 
-    assert "Missing checkpoint keys" not in output
-    assert "Unexpected checkpoint keys" not in output
+    assert "Test accuracy: 50.0000%" in output
+    model.load_state_dict.assert_called_once_with({}, strict=True)
 
 
 def test_efficientnet_inference_raises_for_missing_checkpoint(

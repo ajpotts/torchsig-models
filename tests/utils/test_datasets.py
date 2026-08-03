@@ -188,6 +188,36 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
     assert (root / cfg.dataset_id).exists()
 
 
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
+def test_prepare_torchsig_datasets_uses_explicit_transforms(
+    iterable_dataset_cls,
+    dataloader_cls,
+    dataset_creator_cls,
+    static_dataset_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    transforms = [MagicMock()]
+    dataset_creator_cls.return_value = MagicMock()
+    static_dataset_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+    dataloader_cls.side_effect = [MagicMock() for _ in range(6)]
+
+    prepare_torchsig_datasets(
+        train_cfg=cfg,
+        val_cfg=cfg,
+        test_cfg=cfg,
+        dataset_root=tmp_path,
+        transforms=transforms,
+    )
+
+    creation_calls = iterable_dataset_cls.call_args_list
+    assert len(creation_calls) == 3
+    assert all(call.kwargs["transforms"] is transforms for call in creation_calls)
+
+
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 def test_prepare_torchsig_inference_dataset_returns_loader(
