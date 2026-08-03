@@ -300,9 +300,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--config",
         "--dataset-config",
-        dest="config",
         type=Path,
         help=(
             "Default TorchSig dataset config YAML used for train/val/test "
@@ -417,24 +415,26 @@ def _resolve_config_path(
     if default_config is not None:
         return default_config
 
-    raise ValueError(f"Must provide either --dataset-config or --{split}-config.")
+    raise ValueError(
+        f"Must provide either --dataset-config or --{split}-config."
+    )
 
 
 if __name__ == "__main__":
     args = parse_args()
 
     train_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.train_config,
         "train",
     )
     val_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.val_config,
         "val",
     )
     test_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.test_config,
         "test",
     )
