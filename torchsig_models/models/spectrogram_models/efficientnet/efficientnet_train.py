@@ -96,8 +96,28 @@ def _spectrogram_transforms(
     Returns:
         Dataset transforms that convert IQ samples into spectrograms.
     """
-    fft_size = getattr(cfg, "fft_size", 256)
-    return [Spectrogram(fft_size=fft_size)]
+    fft_size = getattr(cfg, "output_spectrogram_fft", None)
+    if fft_size is None:
+        fft_size = getattr(cfg, "dataset_metadata", {}).get("fft_size", 256)
+    return [Spectrogram(fft_size=int(fft_size))]
+
+
+def _parse_devices(value: str) -> int | str:
+    """Parse a Lightning device count or symbolic device selection."""
+    return int(value) if value.isdigit() else value
+
+
+def _validate_single_signal_config(
+    cfg: TorchSigDatasetConfig,
+    split: str,
+) -> None:
+    """Ensure a dataset is compatible with single-label classification."""
+    num_signals_max = cfg.dataset_metadata.get("num_signals_max", 1)
+    if int(num_signals_max) != 1:
+        raise ValueError(
+            f"The {split} dataset permits up to {num_signals_max} signals per "
+            "sample, but EfficientNet classification requires num_signals_max=1."
+        )
 
 
 def _build_scheduler(
@@ -148,8 +168,8 @@ def train_efficientnet_2d(
     model_name: EfficientNet2DModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
     logger: Logger | bool | None = True,
-    accelerator: str = "gpu",
-    devices: int | str | list[int] = 1,
+    accelerator: str = "auto",
+    devices: int | str | list[int] = "auto",
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-2D spectrogram classifier.
 
@@ -177,6 +197,10 @@ def train_efficientnet_2d(
         metric trackers, data loaders, class count, parameter count, and dataset
         preparation metadata.
     """
+    _validate_single_signal_config(train_cfg, "training")
+    _validate_single_signal_config(val_cfg, "validation")
+    _validate_single_signal_config(test_cfg, "test")
+
     set_deterministic(int(train_cfg.seed))
 
     checkpoint_dir = Path(checkpoint_dir)
@@ -275,9 +299,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--config",
         "--dataset-config",
-        dest="config",
         type=Path,
         help=(
             "Default TorchSig dataset config YAML used for train/val/test "
@@ -349,6 +371,20 @@ def parse_args() -> argparse.Namespace:
         help="Regenerate datasets.",
     )
 
+    parser.add_argument(
+        "--accelerator",
+        default="auto",
+        choices=["auto", "cpu", "gpu", "mps"],
+        help="Lightning accelerator used for training.",
+    )
+
+    parser.add_argument(
+        "--devices",
+        type=_parse_devices,
+        default="auto",
+        help="Lightning device count or selection, such as 1 or auto.",
+    )
+
     return parser.parse_args()
 
 
@@ -360,7 +396,7 @@ def _resolve_config_path(
     """Resolve the dataset config path for a train, validation, or test split.
 
     Args:
-        default_config: Shared config path supplied with ``--config``.
+        default_config: Shared config path supplied with ``--dataset-config``.
         split_config: Split-specific config path supplied with
             ``--<split>-config``.
         split: Split name used in the error message.
@@ -378,24 +414,26 @@ def _resolve_config_path(
     if default_config is not None:
         return default_config
 
-    raise ValueError(f"Must provide either --config or --{split}-config.")
+    raise ValueError(
+        f"Must provide either --dataset-config or --{split}-config."
+    )
 
 
 if __name__ == "__main__":
     args = parse_args()
 
     train_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.train_config,
         "train",
     )
     val_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.val_config,
         "val",
     )
     test_cfg_path = _resolve_config_path(
-        args.config,
+        args.dataset_config,
         args.test_config,
         "test",
     )
@@ -469,6 +507,8 @@ if __name__ == "__main__":
         metrics_dir=run_dir / "metrics",
         model_name=args.model,
         overwrite=args.overwrite,
+        accelerator=args.accelerator,
+        devices=args.devices,
     )
 
     print(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")

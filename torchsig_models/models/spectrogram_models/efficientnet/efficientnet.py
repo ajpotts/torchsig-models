@@ -3,7 +3,6 @@
 import timm
 import torch
 from torch import nn
-import logging
 
 __all__ = [
     "efficientnet_b0",
@@ -12,13 +11,6 @@ __all__ = [
     "NormalizedModel",
     "SpectrogramNormalization",
 ]
-
-
-logger = logging.getLogger(__name__)
-
-PRETRAINED_CHECKPOINTS = {
-    # Reserved for future local checkpoint support.
-}
 
 
 class SpectrogramNormalization(nn.Module):
@@ -30,7 +22,7 @@ class SpectrogramNormalization(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         mean = x.mean(dim=(-2, -1), keepdim=True)
-        std = x.std(dim=(-2, -1), keepdim=True)
+        std = x.std(dim=(-2, -1), keepdim=True, correction=0)
         return (x - mean) / (std + self.eps)
 
 
@@ -43,6 +35,14 @@ class NormalizedModel(nn.Module):
         self.model = model
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim == 3:
+            x = x.unsqueeze(1)
+        elif x.ndim != 4:
+            raise ValueError(
+                "Expected spectrogram input with shape [batch, frequency, time] "
+                "or [batch, channels, frequency, time], "
+                f"got {tuple(x.shape)}."
+            )
         return self.model(self.normalize(x))
 
 

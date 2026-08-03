@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -14,7 +13,6 @@ import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_infer
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference import (
     _strip_lightning_prefix,
     efficientnet_inference,
-    parse_args,
 )
 
 

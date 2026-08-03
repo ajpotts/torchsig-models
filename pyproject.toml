@@ -95,6 +95,11 @@ Changelog = "https://github.com/TorchDSP/torchsig-models/releases"
 # Automatically find all packages starting in root directory
 where = ["."]
 
+[tool.setuptools.package-data]
+"torchsig_models.models.spectrogram_models.efficientnet" = [
+    "training_params/*.yaml",
+]
+
 [tool.setuptools.dynamic]
 # Dynamically read version from torchsig.__version__
 version = {attr = "torchsig_models.__version__"}
