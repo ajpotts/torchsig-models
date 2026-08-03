@@ -514,10 +514,10 @@ def train_validate(
         metrics_dir=metrics_dir,
     )
 
-    callbacks: list[Callback] = [
-        metrics_callback,
-        LearningRateMonitor(logging_interval="epoch"),
-    ]
+    callbacks: list[Callback] = [metrics_callback]
+
+    if logger not in (False, None):
+        callbacks.append(LearningRateMonitor(logging_interval="epoch"))
 
     if checkpoint_dir is not None:
         checkpoint_dir = Path(checkpoint_dir)
