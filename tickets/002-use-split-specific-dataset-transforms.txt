@@ -1,0 +1,32 @@
+Title: Use each dataset split's configuration when building transforms
+Type: Bug
+Priority: Medium
+
+Description
+-----------
+prepare_torchsig_datasets() builds transforms once from train_cfg and reuses
+that list while generating the train, validation, and test datasets. The API
+accepts independent configurations for all three splits, so validation or test
+settings such as output representation and FFT size are silently ignored when
+they differ from the training settings.
+
+Relevant code
+-------------
+- torchsig_models/utils/datasets.py
+
+Proposed work
+-------------
+1. Build transforms independently from train_cfg, val_cfg, and test_cfg.
+2. Pass the matching transform list to each _create_static_dataset() call.
+3. Define and document how an explicit transform override should apply to
+   splits, if transform overrides are supported.
+4. Add a regression test with distinct FFT sizes or representations for each
+   split.
+
+Acceptance criteria
+-------------------
+- Each split is generated with transforms derived from its own configuration.
+- A test verifies that different split configurations produce different
+  transform arguments.
+- Existing behavior remains unchanged when all three configurations match.
+
