@@ -1,0 +1,39 @@
+Title: Restore the best validation checkpoint before test evaluation
+Type: Bug
+Priority: Medium
+
+Description
+-----------
+The shared training utility saves the checkpoint with the best validation F1
+score, but train_efficientnet_2d() evaluates and returns the model weights from
+the final training epoch. If validation performance declines near the end of
+training, the reported test metrics do not describe the selected checkpoint
+and the returned model is not the best model saved during the run.
+
+Relevant code
+-------------
+- torchsig_models/utils/training.py
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+
+Proposed work
+-------------
+1. Expose the best checkpoint path from the shared train_validate() workflow.
+2. Restore the best validation-F1 weights after trainer.fit() completes.
+3. Run test evaluation against the restored model.
+4. Ensure the model returned by train_efficientnet_2d() contains the same
+   weights as the selected checkpoint.
+5. Record the selected checkpoint path in the training result metadata.
+6. Preserve correct behavior when checkpointing is disabled or no checkpoint
+   is produced.
+7. Add regression tests where the final epoch differs from the best epoch.
+
+Acceptance criteria
+-------------------
+- Test metrics are computed using the checkpoint with the best validation F1.
+- The returned model state matches the selected best checkpoint.
+- The result dictionary includes the selected checkpoint path.
+- Training without a checkpoint directory continues to use final-epoch weights
+  without failing.
+- Existing IQ and spectrogram training callers remain compatible.
+- Tests cover successful restoration, no-checkpoint behavior, and invalid or
+  missing checkpoint handling.
