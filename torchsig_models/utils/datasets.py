@@ -1,5 +1,7 @@
 """Dataset and dataloader utilities for TorchSig model training."""
+
 from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any
@@ -22,7 +24,6 @@ from torchsig.utils.defaults import TorchSigDefaults
 from torchsig.utils.writer import DatasetCreator
 
 
-
 __all__ = ["prepare_torchsig_datasets"]
 
 
@@ -32,9 +33,10 @@ def _dataset_metadata(cfg: TorchSigDatasetConfig) -> dict[str, Any]:
     return metadata
 
 
-def _transforms(cfg: TorchSigDatasetConfig) -> list[Any]:
+def _transforms(cfg: TorchSigDatasetConfig) -> list[Transform]:
     if cfg.output_representation.lower() == "iq":
         return [ComplexTo2D()]
+
     if cfg.output_representation.lower() == "spectrogram":
         fft_size = cfg.fft_size
         return [Spectrogram(fft_size=fft_size), YOLOLabel()]
@@ -47,10 +49,9 @@ def _create_static_dataset(
     cfg: TorchSigDatasetConfig,
     split: str,
     root: Path,
-    transforms: list["Transform"],
+    transforms: list[Transform],
     batch_size: int,
     overwrite: bool,
-    *,
     signal_generators: str | list[str] = "all",
 ) -> StaticTorchSigDataset:
     split_root = root / split
@@ -75,6 +76,7 @@ def _create_static_dataset(
         root=str(split_root),
         target_labels=getattr(cfg, "target_labels", ["class_index"]),
     )
+
 
 def prepare_torchsig_datasets(
     train_cfg: TorchSigDatasetConfig,

@@ -239,6 +239,7 @@ def test_classifier_metrics_tracker_callback_updates_and_stores_train_metrics():
         pytest.approx(1.0),
         on_epoch=True,
         prog_bar=True,
+        sync_dist=True,
     )
 
 

@@ -1,6 +1,7 @@
 import os
 import random
 from pathlib import Path
+import logging
 
 import numpy as np
 import pytorch_lightning as pl
@@ -10,6 +11,7 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
 )
+from pytorch_lightning.loggers import Logger
 
 from torchsig_models.utils.classifier_metrics_tracker import (
     ClassifierMetricsTracker,
@@ -17,9 +19,12 @@ from torchsig_models.utils.classifier_metrics_tracker import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 # ==============================================================
 #  Deterministic‑seed helper
 # ==============================================================
+
 
 def set_deterministic(seed: int) -> None:
     """Configure common libraries for reproducible execution.
@@ -129,7 +134,6 @@ def compute_class_weights_tensor(
 
     if dataset is not None:
         for _, (_, label) in enumerate(dataset):
-
             if isinstance(label, torch.Tensor):
                 label = label.detach().cpu().reshape(-1).tolist()[0]
             elif isinstance(label, np.ndarray):
@@ -191,6 +195,7 @@ def compute_num_params(model: torch.nn.Module) -> int:
         5560
     """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 class SignalClassifier(pl.LightningModule):
     """Generic PyTorch Lightning wrapper for multiclass classification models.
@@ -298,7 +303,7 @@ class SignalClassifier(pl.LightningModule):
 
         loss = self.criterion(logits, y)
 
-        self.log(f"{phase}_loss", loss, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}_loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return {
             "loss": loss,
@@ -337,7 +342,7 @@ class SignalClassifier(pl.LightningModule):
         batch_idx: int,
         *args,
         **kwargs,
-    )  -> dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Execute a single validation step.
 
         Args:
@@ -408,6 +413,7 @@ def train_validate(
     gradient_clip_val: float = 1.0,
     enable_progress_bar: bool = True,
     clamp_logits: bool = True,
+    logger: Logger | bool | None = True,
 ) -> tuple[SignalClassifier, ClassifierMetricsTrackerCallback]:
     """Train and validate a multiclass classifier using PyTorch Lightning.
 
@@ -536,6 +542,7 @@ def train_validate(
         enable_progress_bar=enable_progress_bar,
         precision=precision,
         use_distributed_sampler=use_distributed_sampler,
+        logger=logger,
     )
 
     trainer.fit(

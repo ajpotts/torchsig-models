@@ -9,7 +9,6 @@ from torchsig.transforms.transforms import ComplexTo2D
 from torchsig.utils.yaml import load_config_from_yaml
 
 import numpy as np
-import argparse
 import os
 from pathlib import Path
 import torch
@@ -25,7 +24,9 @@ def _to_single_class_index(target) -> int:
 
     if isinstance(target, dict):
         if "class_index" not in target:
-            raise KeyError(f"Expected 'class_index' in target dict, got keys={list(target.keys())}")
+            raise KeyError(
+                f"Expected 'class_index' in target dict, got keys={list(target.keys())}"
+            )
         return _to_single_class_index(target["class_index"])
 
     if torch.is_tensor(target):
@@ -193,23 +194,23 @@ def xcit1d_inference(
 
     total = 0
     correct = 0
-    
+
     with torch.inference_mode():
         for x, y in test_loader:
             x = x.to(device=device, non_blocking=True)
             y = y.to(device=device, non_blocking=True)
-    
+
             logits = model(x)
-    
+
             if isinstance(logits, (tuple, list)):
                 logits = logits[0]
             elif isinstance(logits, dict):
                 logits = logits.get("logits", next(iter(logits.values())))
-    
+
             preds = torch.argmax(logits, dim=1)
-    
+
             correct += (preds == y).sum().item()
             total += y.numel()
-    
+
     accuracy = correct / total if total else 0.0
     return accuracy
