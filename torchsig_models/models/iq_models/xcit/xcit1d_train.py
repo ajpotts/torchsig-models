@@ -18,7 +18,14 @@ import pytorch_lightning as pl
 torch.set_float32_matmul_precision("high")
 
 
-def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
+def xcit1d_trainer(
+    root,
+    config_file,
+    pt_dir,
+    metrics_dir,
+    num_epochs,
+    batch_size: int = 64,
+) -> None:
     """Train an XCiT classifier on the dataset at root, saving checkpoints to pt_dir and
     metrics to metrics_dir. Training parameters are set in config_file. num_epochs specifies
     how many epochs to train for.
@@ -29,6 +36,7 @@ def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
         pt_dir: Path to place checkpoints.
         metrics_dir: Path to place metric graphs.
         num_epochs: Number of epochs to train.
+        batch_size: Number of examples in each training batch. Defaults to 64.
 
     """
 
@@ -58,7 +66,7 @@ def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
         metadata=dataset_metadata,
         dataset_size=cfg.dataset_length,
         dataset_splits=[0.7, 0.2, 0.1],
-        batch_size=64,
+        batch_size=batch_size,
         num_workers=32,
         collate_fn=None,
         overwrite=False,
@@ -103,5 +111,5 @@ def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
     trainer.fit(model, datamodule=dm)
     trainer.save_checkpoint(str(pt_dir) + "/classification_model_final.ckpt")
 
-    metrics.plot()
+    metrics.plot(show=False, close=True)
     metrics.save_to_csv()
