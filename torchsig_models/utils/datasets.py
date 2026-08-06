@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +67,6 @@ def _create_static_dataset(
     transforms: list[Transform],
     batch_size: int,
     overwrite: bool,
-    *,
     signal_generators: str | list[str] = "all",
 ) -> StaticTorchSigDataset:
     """Generate and load one static TorchSig dataset split."""

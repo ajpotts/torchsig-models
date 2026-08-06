@@ -26,7 +26,6 @@ ObjectiveTrainFn = Callable[
 
 logger = logging.getLogger(__name__)
 
-
 class _MLflowLogger:
     """Provide best-effort MLflow logging.
 

@@ -1,6 +1,5 @@
 experiment_name: iq_narrowband
 model_name: efficientnet_b4
-
 batch_size: 64
 max_epochs: 30
 learning_rate: 2.45e-4
