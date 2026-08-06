@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 import torch
 import yaml
+from pytorch_lightning.loggers import Logger
+import logging
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.signals.signal_lists import TorchSigSignalLists
@@ -32,6 +34,7 @@ from torchsig_models.utils.training import (
     train_validate,
 )
 
+
 __all__ = [
     "EfficientNetModelName",
     "MODEL_FACTORY",
@@ -39,6 +42,8 @@ __all__ = [
     "train_efficientnet_iq",
 ]
 
+
+module_logger = logging.getLogger(__name__)
 
 MODEL_FACTORY = {
     "efficientnet_b0": efficientnet_b0,
@@ -130,6 +135,9 @@ def train_efficientnet_iq(
     overwrite: bool = False,
     model_name: EfficientNetModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
+    logger: Logger | bool | None = True,
+    accelerator: str = "gpu",
+    devices: int | str | list[int] = 1,
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-1D IQ classifier.
 
@@ -148,6 +156,7 @@ def train_efficientnet_iq(
         signal_generators: Signal generator selection passed to dataset
             preparation.
 
+
     Returns:
         Dictionary containing the trained Lightning model, wrapped PyTorch model,
         metric trackers, data loaders, class count, parameter count, and dataset
@@ -162,6 +171,7 @@ def train_efficientnet_iq(
         Path(metrics_dir) if metrics_dir is not None else checkpoint_dir / "metrics"
     )
 
+    module_logger.info("Preparing datasets...")
     train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
         train_cfg,
         val_cfg,
@@ -171,6 +181,7 @@ def train_efficientnet_iq(
         overwrite=overwrite,
         signal_generators=signal_generators,
     )
+    module_logger.info("Datasets ready.")
 
     class_list = TorchSigSignalLists.all_signals
     num_classes = len(class_list)
@@ -195,6 +206,16 @@ def train_efficientnet_iq(
 
     scheduler = _build_scheduler(optimizer, params["max_epochs"])
 
+    module_logger.info(f"Train batches: {len(train_loader)}")
+    module_logger.info(f"Val batches: {len(val_loader)}")
+    module_logger.info(f"Test batches: {len(test_loader)}")
+    module_logger.info(f"Batch size: {params['batch_size']}")
+    module_logger.info(f"CUDA available: {torch.cuda.is_available()}")
+    module_logger.info(
+        f"Training device request: accelerator={accelerator}, devices={devices}"
+    )
+
+    module_logger.info("Starting training...")
     pl_model, metrics_callback = train_validate(
         train_loader=train_loader,
         val_loader=val_loader,
@@ -206,7 +227,11 @@ def train_efficientnet_iq(
         num_classes=num_classes,
         metrics_dir=metrics_dir,
         checkpoint_dir=checkpoint_dir,
+        logger=logger,
+        accelerator=accelerator,
+        devices=devices,
     )
+    module_logger.info("Training finished.")
 
     test_metrics = evaluate_classifier(
         model=pl_model.model,
@@ -390,4 +415,4 @@ if __name__ == "__main__":
         overwrite=args.overwrite,
     )
 
-    print(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")
+    module_logger.info(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")

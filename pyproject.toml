@@ -58,6 +58,8 @@ dependencies = [
     "tensorboardX>=2.6",
     "ultralytics>=8.4",
     "anomalib>=1.0",
+    "optuna",
+    "dotenv",
 ]
 
 
