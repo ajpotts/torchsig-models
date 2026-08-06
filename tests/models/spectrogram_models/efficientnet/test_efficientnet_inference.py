@@ -88,6 +88,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     params = {
         "drop_path": 0.1,
         "drop_rate": 0.25,
+        "normalize": True,
     }
     load_training_params = MagicMock(return_value=params)
     monkeypatch.setattr(
@@ -160,6 +161,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.25,
+        normalize=True,
     )
 
     torch_load.assert_called_once_with(
@@ -323,6 +325,7 @@ def test_efficientnet_inference_uses_default_model_params(
         num_classes=10,
         drop_path_rate=0.2,
         drop_rate=0.3,
+        normalize=False,
     )
 
 

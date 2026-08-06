@@ -27,11 +27,19 @@ class SpectrogramNormalization(nn.Module):
 
 
 class NormalizedModel(nn.Module):
-    """Wrap a model with spectrogram normalization."""
+    """Wrap a model with input-shape handling and optional normalization."""
 
-    def __init__(self, model: nn.Module):
+    def __init__(self, model: nn.Module, normalize: bool = True):
+        """Initialize the wrapper.
+
+        Args:
+            model: Spectrogram model receiving four-dimensional tensors.
+            normalize: Whether to standardize each sample and channel.
+        """
         super().__init__()
-        self.normalize = SpectrogramNormalization()
+        self.normalize = (
+            SpectrogramNormalization() if normalize else nn.Identity()
+        )
         self.model = model
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -72,6 +80,7 @@ def _create_effnet_2d(
     drop_rate: float,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalize: bool = False,
 ) -> nn.Module:
     """Create and configure a 2D EfficientNet model."""
     model = timm.create_model(
@@ -89,7 +98,7 @@ def _create_effnet_2d(
         checkpoint_path=checkpoint_path,
     )
 
-    return NormalizedModel(model)
+    return NormalizedModel(model, normalize=normalize)
 
 
 def efficientnet_b0(
@@ -99,8 +108,13 @@ def efficientnet_b0(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalize: bool = False,
 ) -> nn.Module:
-    """Construct a 2D EfficientNet-B0 model for spectrogram classification."""
+    """Construct a 2D EfficientNet-B0 spectrogram classifier.
+
+    Args:
+        normalize: Whether to standardize each input sample and channel.
+    """
     return _create_effnet_2d(
         "efficientnet_b0",
         num_classes=num_classes,
@@ -109,6 +123,7 @@ def efficientnet_b0(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalize=normalize,
     )
 
 
@@ -119,8 +134,13 @@ def efficientnet_b2(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalize: bool = False,
 ) -> nn.Module:
-    """Construct a 2D EfficientNet-B2 model for spectrogram classification."""
+    """Construct a 2D EfficientNet-B2 spectrogram classifier.
+
+    Args:
+        normalize: Whether to standardize each input sample and channel.
+    """
     return _create_effnet_2d(
         "efficientnet_b2",
         num_classes=num_classes,
@@ -129,6 +149,7 @@ def efficientnet_b2(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalize=normalize,
     )
 
 
@@ -139,8 +160,13 @@ def efficientnet_b4(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalize: bool = False,
 ) -> nn.Module:
-    """Construct a 2D EfficientNet-B4 model for spectrogram classification."""
+    """Construct a 2D EfficientNet-B4 spectrogram classifier.
+
+    Args:
+        normalize: Whether to standardize each input sample and channel.
+    """
     return _create_effnet_2d(
         "efficientnet_b4",
         num_classes=num_classes,
@@ -149,4 +175,5 @@ def efficientnet_b4(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalize=normalize,
     )

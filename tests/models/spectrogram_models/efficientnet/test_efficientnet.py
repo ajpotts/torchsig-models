@@ -78,7 +78,7 @@ def test_efficientnet_2d_supports_custom_input_channels():
     assert out.shape == (2, 57)
 
 
-def test_efficientnet_2d_returns_normalized_model_wrapper():
+def test_efficientnet_2d_disables_normalization_by_default():
     model = efficientnet_b0(
         num_classes=57,
         input_channels=1,
@@ -87,8 +87,21 @@ def test_efficientnet_2d_returns_normalized_model_wrapper():
     )
 
     assert isinstance(model, NormalizedModel)
-    assert isinstance(model.normalize, SpectrogramNormalization)
+    assert isinstance(model.normalize, nn.Identity)
     assert isinstance(model.model, nn.Module)
+
+
+def test_efficientnet_2d_supports_per_sample_normalization():
+    model = efficientnet_b0(
+        num_classes=57,
+        input_channels=1,
+        drop_path_rate=0.0,
+        drop_rate=0.0,
+        normalize=True,
+    )
+
+    assert isinstance(model, NormalizedModel)
+    assert isinstance(model.normalize, SpectrogramNormalization)
 
 
 def test_efficientnet_2d_accepts_torchsig_spectrogram_batches():

@@ -369,6 +369,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     val_cfg = _dataset_config(seed=12, fft_size=128)
     test_cfg = _dataset_config(seed=13, fft_size=128)
     params = _training_params()
+    params["normalize"] = True
 
     train_loader = object()
     val_loader = object()
@@ -488,6 +489,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
+        normalize=True,
     )
 
     train_validate.assert_called_once()
@@ -629,6 +631,7 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         num_classes=2,
         drop_path_rate=0.2,
         drop_rate=0.3,
+        normalize=False,
     )
 
 
