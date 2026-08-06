@@ -1,0 +1,1 @@
+Re. input handling, why would we want to normalize each spectrogram input to the model on a per-sample basis, rather than consistently apply a scaling factor across all inputs for the same dynamic range?
