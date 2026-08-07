@@ -1,0 +1,23 @@
+dataset_length: 4000
+seed: 794
+target_labels: [class_index, snr_db]
+dataset_metadata:
+  num_iq_samples_dataset: 4096
+  num_signals_min: 1
+  num_signals_max: 1
+  fft_size: 512
+  fft_stride: 512
+  sample_rate: 10000000
+  noise_power_db: 0.0
+  snr_db_min: -5.0
+  snr_db_max: 25.0
+  cochannel_overlap_probability: 0.0
+  signal_duration_in_samples_min: 3600
+  signal_duration_in_samples_max: 4096
+  bandwidth_min: 750000
+  bandwidth_max: 2500000
+  signal_center_freq_min: -2500000
+  signal_center_freq_max: 2500000
+  frequency_min: -5000000
+  frequency_max: 5000000
+  class_names: [bpsk, qpsk, 16qam, 2fsk, 4fsk, lfm-radar]
