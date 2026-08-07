@@ -11,11 +11,13 @@ from unittest.mock import Mock
 
 import optuna
 import pytest
+import yaml
 
 import torchsig_models.models.iq_models.efficientnet.efficientnet1d_hyperparameter_search as search_module
 from torchsig_models.models.iq_models.efficientnet.efficientnet1d_hyperparameter_search import (
     _apply_dataset_overrides,
     _final_metrics,
+    _write_best_trial_summary,
     _load_split_configs,
     main,
     parse_args,
@@ -358,6 +360,56 @@ def test_final_metrics_extracts_latest_values() -> None:
     }
 
 
+def test_best_trial_summary_uses_best_not_last_trial(tmp_path: Path) -> None:
+    """Report parameters from the best trial when the last trial is worse."""
+    study = optuna.create_study(direction="maximize")
+    distribution = optuna.distributions.FloatDistribution(1e-5, 1e-2)
+    study.add_trial(
+        optuna.trial.create_trial(
+            params={"learning_rate": 0.001},
+            distributions={"learning_rate": distribution},
+            value=0.9,
+        )
+    )
+    study.add_trial(
+        optuna.trial.create_trial(
+            params={"learning_rate": 0.009},
+            distributions={"learning_rate": distribution},
+            value=0.2,
+        )
+    )
+
+    summary_path, training_params_path = _write_best_trial_summary(
+        study,
+        "val_f1",
+        {
+            "model_name": "efficientnet_b0",
+            "max_epochs": 30,
+            "learning_rate": 0.0005,
+            "pretrained": True,
+        },
+        tmp_path,
+    )
+    summary = yaml.safe_load(summary_path.read_text(encoding="utf-8"))
+    training_params = yaml.safe_load(
+        training_params_path.read_text(encoding="utf-8")
+    )
+
+    assert summary_path == tmp_path / "best_trial.yaml"
+    assert summary == {
+        "trial_number": 0,
+        "metric_name": "val_f1",
+        "metric_value": pytest.approx(0.9),
+        "parameters": {"learning_rate": pytest.approx(0.001)},
+    }
+    assert training_params_path == tmp_path / "best_training_params.yaml"
+    assert training_params == {
+        "model_name": "efficientnet_b0",
+        "max_epochs": 30,
+        "learning_rate": pytest.approx(0.001),
+        "pretrained": True,
+    }
+
 def test_main_configures_and_runs_optimization(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -494,6 +546,11 @@ def test_main_configures_and_runs_optimization(
         return SimpleNamespace(
             best_value=0.80,
             best_params={"learning_rate": 0.001},
+            best_trial=SimpleNamespace(
+                number=0,
+                value=0.80,
+                params={"learning_rate": 0.001},
+            ),
         )
 
     monkeypatch.setattr(
@@ -658,6 +715,7 @@ def test_main_uses_search_config_trial_count_when_not_overridden(
         return SimpleNamespace(
             best_value=0.5,
             best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
         )
 
     monkeypatch.setattr(
@@ -743,6 +801,7 @@ def test_main_trial_count_defaults(
         return SimpleNamespace(
             best_value=0.5,
             best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
         )
 
     monkeypatch.setattr(
@@ -837,6 +896,7 @@ def test_main_loads_dotenv_only_when_mlflow_is_enabled(
         lambda **kwargs: SimpleNamespace(
             best_value=0.5,
             best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
         ),
     )
     monkeypatch.setattr(
