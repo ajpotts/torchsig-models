@@ -1,0 +1,45 @@
+Title: Hyperparameter search output reports non-best trial parameters
+
+Type: Bug
+Priority: Medium
+
+## Description
+
+The hyperparameter search output prints the parameters from the most recently completed trial rather than the parameters from the best-performing trial.
+
+For example, the output reports:
+
+```
+Trial 19 finished with value: 0.23180735111236572 and parameters:
+{
+    "learning_rate": 0.0002452824377322744,
+    "weight_decay": 3.686313612732083e-06,
+    "drop_rate": 0.256027872489025,
+    "drop_path": 0.052262762200692967,
+    "label_smoothing": 0.08611354018874506,
+    "batch_size": 64,
+}
+```
+
+It then states:
+
+```
+Best is trial 17 with value: 0.36274346709251404.
+```
+
+This makes it easy to mistakenly copy Trial 19's parameters into the training configuration even though Trial 17 achieved the best objective value.
+
+## Proposed work
+
+1. Print the best trial's parameter dictionary alongside the best trial number and objective value.
+2. Clearly distinguish the current trial's parameters from the final best-trial summary.
+3. Optionally emit the best parameters in YAML-compatible formatting for direct use in a training configuration.
+4. Add a regression test verifying that the final summary uses `study.best_trial.params`, not the parameters from the last completed trial.
+
+## Acceptance criteria
+
+* The final search summary includes the best trial number, objective value, and parameter dictionary.
+* The displayed parameters correspond to the reported best trial.
+* A test covers a study in which the final completed trial is not the best trial.
+* The output does not imply that the last completed trial's parameters are the recommended configuration.
+
