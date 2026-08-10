@@ -1,5 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import torch
+from torch.utils.data import RandomSampler, SequentialSampler, TensorDataset
+
 
 from torchsig_models.utils.datasets import (
     _create_static_dataset,
@@ -15,6 +18,12 @@ class DummyConfig:
     output_representation = "iq"
     dataset_metadata = {"sample_rate": 1_000_000}
     fft_size = 256
+    seed = 123
+
+
+class SeedableTensorDataset(TensorDataset):
+    def seed(self, seed: int) -> None:
+        self.seed_value = seed
 
 
 def test_dataset_metadata_merges_defaults():
@@ -163,6 +172,39 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
         str(tmp_path / cfg.dataset_id / "val"),
         str(tmp_path / cfg.dataset_id / "test"),
     ]
+
+    loader_calls = dataloader_cls.call_args_list[3:]
+    assert [call.kwargs["shuffle"] for call in loader_calls] == [True, False, False]
+    assert [call.kwargs["seed"] for call in loader_calls] == [123, 123, 123]
+
+
+def test_prepare_torchsig_datasets_uses_expected_samplers_and_seed(tmp_path):
+    cfg = DummyConfig()
+    dataset = SeedableTensorDataset(torch.arange(12))
+
+    with patch(
+        "torchsig_models.utils.datasets._create_static_dataset",
+        return_value=dataset,
+    ):
+        loaders_a = prepare_torchsig_datasets(
+            cfg, cfg, cfg, dataset_root=tmp_path / "a", batch_size=3
+        )[:3]
+        loaders_b = prepare_torchsig_datasets(
+            cfg, cfg, cfg, dataset_root=tmp_path / "b", batch_size=3
+        )[:3]
+
+    assert isinstance(loaders_a[0].sampler, RandomSampler)
+    assert isinstance(loaders_a[1].sampler, SequentialSampler)
+    assert isinstance(loaders_a[2].sampler, SequentialSampler)
+
+    train_order_a = torch.cat([batch[0] for batch in loaders_a[0]])
+    train_order_b = torch.cat([batch[0] for batch in loaders_b[0]])
+    assert torch.equal(train_order_a, train_order_b)
+    assert not torch.equal(train_order_a, torch.arange(12))
+
+    expected_order = torch.arange(12)
+    for loader in loaders_a[1:]:
+        assert torch.equal(torch.cat([batch[0] for batch in loader]), expected_order)
 
 
 def test_prepare_torchsig_datasets_creates_root(tmp_path):
