@@ -74,12 +74,18 @@ def load_training_params(
         FileNotFoundError: If the parameter file does not exist.
     """
     if params_path is None:
-        params_path = Path(__file__).parent / "training_params" / f"{model_name}.yaml"
+        params_path = (
+            Path(__file__).parent
+            / "training_params"
+            / f"{model_name}.yaml"
+        )
     else:
         params_path = Path(params_path)
 
     if not params_path.exists():
-        raise FileNotFoundError(f"Training parameter file not found: {params_path}")
+        raise FileNotFoundError(
+            f"Training parameter file not found: {params_path}"
+        )
 
     with params_path.open("r", encoding="utf-8") as params_file:
         return yaml.safe_load(params_file)
@@ -96,28 +102,8 @@ def _spectrogram_transforms(
     Returns:
         Dataset transforms that convert IQ samples into spectrograms.
     """
-    fft_size = getattr(cfg, "output_spectrogram_fft", None)
-    if fft_size is None:
-        fft_size = getattr(cfg, "dataset_metadata", {}).get("fft_size", 256)
-    return [Spectrogram(fft_size=int(fft_size))]
-
-
-def _parse_devices(value: str) -> int | str:
-    """Parse a Lightning device count or symbolic device selection."""
-    return int(value) if value.isdigit() else value
-
-
-def _validate_single_signal_config(
-    cfg: TorchSigDatasetConfig,
-    split: str,
-) -> None:
-    """Ensure a dataset is compatible with single-label classification."""
-    num_signals_max = cfg.dataset_metadata.get("num_signals_max", 1)
-    if int(num_signals_max) != 1:
-        raise ValueError(
-            f"The {split} dataset permits up to {num_signals_max} signals per "
-            "sample, but EfficientNet classification requires num_signals_max=1."
-        )
+    fft_size = getattr(cfg, "fft_size", 256)
+    return [Spectrogram(fft_size=fft_size)]
 
 
 def _build_scheduler(
@@ -168,8 +154,8 @@ def train_efficientnet_2d(
     model_name: EfficientNet2DModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
     logger: Logger | bool | None = True,
-    accelerator: str = "auto",
-    devices: int | str | list[int] = "auto",
+    accelerator: str = "gpu",
+    devices: int | str | list[int] = 1,
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-2D spectrogram classifier.
 
@@ -197,42 +183,43 @@ def train_efficientnet_2d(
         metric trackers, data loaders, class count, parameter count, and dataset
         preparation metadata.
     """
-    _validate_single_signal_config(train_cfg, "training")
-    _validate_single_signal_config(val_cfg, "validation")
-    _validate_single_signal_config(test_cfg, "test")
-
     set_deterministic(int(train_cfg.seed))
 
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     metrics_dir = (
-        Path(metrics_dir) if metrics_dir is not None else checkpoint_dir / "metrics"
+        Path(metrics_dir)
+        if metrics_dir is not None
+        else checkpoint_dir / "metrics"
     )
 
     transforms = _spectrogram_transforms(train_cfg)
 
-    train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
-        train_cfg,
-        val_cfg,
-        test_cfg,
-        dataset_root=dataset_root,
-        batch_size=params["batch_size"],
-        overwrite=overwrite,
-        signal_generators=signal_generators,
-        transforms=transforms,
+    train_loader, val_loader, test_loader, data_info = (
+        prepare_torchsig_datasets(
+            train_cfg,
+            val_cfg,
+            test_cfg,
+            dataset_root=dataset_root,
+            batch_size=params["batch_size"],
+            overwrite=overwrite,
+            signal_generators=signal_generators,
+            transforms=transforms,
+        )
     )
 
     class_list = TorchSigSignalLists.all_signals
     num_classes = len(class_list)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
 
     model = MODEL_FACTORY[model_name](
         num_classes=num_classes,
         drop_path_rate=params.get("drop_path", 0.2),
         drop_rate=params.get("drop_rate", 0.3),
-        normalize=params.get("normalize", False),
     )
 
     criterion = torch.nn.CrossEntropyLoss(
@@ -296,11 +283,13 @@ def parse_args() -> argparse.Namespace:
         Parsed command-line arguments.
     """
     parser = argparse.ArgumentParser(
-        description=("Train a 2D EfficientNet on a TorchSig spectrogram dataset.")
+        description=(
+            "Train a 2D EfficientNet on a TorchSig spectrogram dataset."
+        )
     )
 
     parser.add_argument(
-        "--dataset-config",
+        "--config",
         type=Path,
         help=(
             "Default TorchSig dataset config YAML used for train/val/test "
@@ -329,7 +318,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--params",
         type=Path,
-        help=("Training params YAML. Defaults to training_params/<model>.yaml."),
+        help=(
+            "Training params YAML. Defaults to "
+            "training_params/<model>.yaml."
+        ),
     )
 
     parser.add_argument(
@@ -372,20 +364,6 @@ def parse_args() -> argparse.Namespace:
         help="Regenerate datasets.",
     )
 
-    parser.add_argument(
-        "--accelerator",
-        default="auto",
-        choices=["auto", "cpu", "gpu", "mps"],
-        help="Lightning accelerator used for training.",
-    )
-
-    parser.add_argument(
-        "--devices",
-        type=_parse_devices,
-        default="auto",
-        help="Lightning device count or selection, such as 1 or auto.",
-    )
-
     return parser.parse_args()
 
 
@@ -397,7 +375,7 @@ def _resolve_config_path(
     """Resolve the dataset config path for a train, validation, or test split.
 
     Args:
-        default_config: Shared config path supplied with ``--dataset-config``.
+        default_config: Shared config path supplied with ``--config``.
         split_config: Split-specific config path supplied with
             ``--<split>-config``.
         split: Split name used in the error message.
@@ -415,24 +393,26 @@ def _resolve_config_path(
     if default_config is not None:
         return default_config
 
-    raise ValueError(f"Must provide either --dataset-config or --{split}-config.")
+    raise ValueError(
+        f"Must provide either --config or --{split}-config."
+    )
 
 
 if __name__ == "__main__":
     args = parse_args()
 
     train_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.train_config,
         "train",
     )
     val_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.val_config,
         "val",
     )
     test_cfg_path = _resolve_config_path(
-        args.dataset_config,
+        args.config,
         args.test_config,
         "test",
     )
@@ -495,7 +475,11 @@ if __name__ == "__main__":
     if args.batch_size is not None:
         params["batch_size"] = args.batch_size
 
-    run_dir = Path("runs") / train_config.dataset_id / args.model
+    run_dir = (
+        Path("runs")
+        / train_config.dataset_id
+        / args.model
+    )
 
     result = train_efficientnet_2d(
         train_cfg=train_config,
@@ -506,8 +490,6 @@ if __name__ == "__main__":
         metrics_dir=run_dir / "metrics",
         model_name=args.model,
         overwrite=args.overwrite,
-        accelerator=args.accelerator,
-        devices=args.devices,
     )
 
     print(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")

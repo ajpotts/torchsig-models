@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 import torch
@@ -19,7 +19,6 @@ from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train i
     _build_scheduler,
     _resolve_config_path,
     _spectrogram_transforms,
-    _validate_single_signal_config,
     load_training_params,
     parse_args,
     train_efficientnet_2d,
@@ -39,8 +38,7 @@ def _dataset_config(
     """Create a minimal dataset-config mock."""
     cfg = MagicMock(spec=TorchSigDatasetConfig)
     cfg.seed = seed
-    cfg.output_spectrogram_fft = fft_size
-    cfg.dataset_metadata = {"fft_size": fft_size}
+    cfg.fft_size = fft_size
     cfg.dataset_id = "test_dataset"
     return cfg
 
@@ -158,25 +156,6 @@ def test_spectrogram_transforms_defaults_to_256() -> None:
     assert transforms[0].fft_size == 256
 
 
-def test_spectrogram_transforms_falls_back_to_metadata_fft_size() -> None:
-    cfg = SimpleNamespace(
-        output_spectrogram_fft=None,
-        dataset_metadata={"fft_size": 128},
-    )
-
-    transforms = _spectrogram_transforms(cfg)
-
-    assert transforms[0].fft_size == 128
-
-
-def test_validate_single_signal_config_rejects_multi_signal_data() -> None:
-    cfg = _dataset_config()
-    cfg.dataset_metadata["num_signals_max"] = 2
-
-    with pytest.raises(ValueError, match="num_signals_max=1"):
-        _validate_single_signal_config(cfg, "training")
-
-
 # =============================================================================
 # Scheduler
 # =============================================================================
@@ -262,7 +241,7 @@ def test_resolve_config_path_raises_when_no_config_is_given() -> None:
     """Verify a missing shared and split-specific config raises an error."""
     with pytest.raises(
         ValueError,
-        match=r"Must provide either --dataset-config or --test-config",
+        match=r"Must provide either --config or --test-config",
     ):
         _resolve_config_path(
             None,
@@ -283,12 +262,12 @@ def test_parse_args_uses_defaults(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["efficientnet_train.py", "--dataset-config", "dataset.yaml"],
+        ["efficientnet_train.py", "--config", "dataset.yaml"],
     )
 
     args = parse_args()
 
-    assert args.dataset_config == Path("dataset.yaml")
+    assert args.config == Path("dataset.yaml")
     assert args.train_config is None
     assert args.val_config is None
     assert args.test_config is None
@@ -299,8 +278,6 @@ def test_parse_args_uses_defaults(
     assert args.epochs is None
     assert args.batch_size is None
     assert args.overwrite is False
-    assert args.accelerator == "auto"
-    assert args.devices == "auto"
 
 
 def test_parse_args_reads_overrides(
@@ -331,16 +308,12 @@ def test_parse_args_reads_overrides(
             "--batch-size",
             "64",
             "--overwrite",
-            "--accelerator",
-            "cpu",
-            "--devices",
-            "2",
         ],
     )
 
     args = parse_args()
 
-    assert args.dataset_config is None
+    assert args.config is None
     assert args.train_config == Path("train.yaml")
     assert args.val_config == Path("val.yaml")
     assert args.test_config == Path("test.yaml")
@@ -351,8 +324,6 @@ def test_parse_args_reads_overrides(
     assert args.epochs == 12
     assert args.batch_size == 64
     assert args.overwrite is True
-    assert args.accelerator == "cpu"
-    assert args.devices == 2
 
 
 # =============================================================================
@@ -369,7 +340,6 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     val_cfg = _dataset_config(seed=12, fft_size=128)
     test_cfg = _dataset_config(seed=13, fft_size=128)
     params = _training_params()
-    params["normalize"] = True
 
     train_loader = object()
     val_loader = object()
@@ -489,7 +459,6 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
-        normalize=True,
     )
 
     train_validate.assert_called_once()
@@ -629,7 +598,6 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         num_classes=2,
         drop_path_rate=0.2,
         drop_rate=0.3,
-        normalize=False,
     )
 
 

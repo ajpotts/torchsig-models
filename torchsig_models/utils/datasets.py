@@ -46,12 +46,8 @@ def _transforms(
         return [ComplexTo2D()]
 
     if cfg.output_representation.lower() == "spectrogram":
-        fft_size = cfg.dataset_metadata.get(
-            "fft_size",
-            getattr(cfg, "fft_size", 256),
-        )
         return [
-            Spectrogram(fft_size=fft_size),
+            Spectrogram(fft_size=cfg.fft_size),
             YOLOLabel(),
         ]
 
@@ -102,10 +98,6 @@ def _create_static_dataset(
     return static_dataset, list(iterable_dataset.class_names)
 
 
-def _loader_generator(seed: int) -> torch.Generator:
-    return torch.Generator().manual_seed(seed)
-
-
 def prepare_torchsig_datasets(
     train_cfg: TorchSigDatasetConfig,
     val_cfg: TorchSigDatasetConfig,
@@ -115,34 +107,17 @@ def prepare_torchsig_datasets(
     dataset_root: str | Path = "datasets",
     batch_size: int = 64,
     overwrite: bool = False,
-    transforms: list[Transform] | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
     dict[str, Any],
 ]:
-    """Generate static TorchSig datasets and return split dataloaders.
-
-    Args:
-        train_cfg: Configuration for the training split.
-        val_cfg: Configuration for the validation split.
-        test_cfg: Configuration for the test split.
-        signal_generators: Signal generators used for dataset creation.
-        dataset_root: Parent directory for the generated dataset.
-        batch_size: Batch size used for creation and returned loaders.
-        overwrite: Whether existing static datasets may be overwritten.
-        transforms: Optional transforms applied while generating every split.
-            When omitted, transforms are inferred from ``train_cfg``.
-
-    Returns:
-        Training, validation, and test loaders followed by dataset metadata.
-    """
+    """Generate static TorchSig datasets and return split dataloaders."""
     root = Path(dataset_root) / train_cfg.dataset_id
     root.mkdir(parents=True, exist_ok=True)
 
-    if transforms is None:
-        transforms = _transforms(train_cfg)
+    transforms = _transforms(train_cfg)
 
     train_dataset, class_names = _create_static_dataset(
         train_cfg,
@@ -178,23 +153,14 @@ def prepare_torchsig_datasets(
         WorkerSeedingDataLoader(
             train_dataset,
             batch_size=batch_size,
-            shuffle=True,
-            seed=train_cfg.seed,
-            generator=_loader_generator(train_cfg.seed),
         ),
         WorkerSeedingDataLoader(
             val_dataset,
             batch_size=batch_size,
-            shuffle=False,
-            seed=val_cfg.seed,
-            generator=_loader_generator(val_cfg.seed),
         ),
         WorkerSeedingDataLoader(
             test_dataset,
             batch_size=batch_size,
-            shuffle=False,
-            seed=test_cfg.seed,
-            generator=_loader_generator(test_cfg.seed),
         ),
         {"root": str(root), "class_names": class_names},
     )
@@ -228,7 +194,9 @@ def prepare_torchsig_inference_dataset(
     root = Path(root)
 
     if not root.exists():
-        raise FileNotFoundError(f"Dataset root not found: {root}")
+        raise FileNotFoundError(
+            f"Dataset root not found: {root}"
+        )
 
     if target_labels is None:
         target_labels = ["class_index"]

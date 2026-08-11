@@ -14,6 +14,7 @@ from torchsig_models.utils.training import (
     compute_num_params,
     set_deterministic,
     SignalClassifier,
+    train_validate,
     evaluate_classifier,
 )
 from torchsig_models.utils.classifier_metrics_tracker import (

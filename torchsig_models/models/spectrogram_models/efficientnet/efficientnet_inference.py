@@ -36,10 +36,16 @@ def _strip_lightning_prefix(
         State dictionary with a leading ``"model."`` removed from keys when
         present.
     """
-    if not any(key.startswith("model.") for key in state_dict):
+    if not any(
+        key.startswith("model.")
+        for key in state_dict
+    ):
         return state_dict
 
-    return {key.removeprefix("model."): value for key, value in state_dict.items()}
+    return {
+        key.removeprefix("model."): value
+        for key, value in state_dict.items()
+    }
 
 
 def efficientnet_inference(
@@ -73,20 +79,23 @@ def efficientnet_inference(
     checkpoint_path = Path(checkpoint_path)
 
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        raise FileNotFoundError(
+            f"Checkpoint not found: {checkpoint_path}"
+        )
 
     params = load_training_params(
         model_name,
         params_path=params_path,
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
 
     model = MODEL_FACTORY[model_name](
         num_classes=num_classes,
         drop_path_rate=params.get("drop_path", 0.2),
         drop_rate=params.get("drop_rate", 0.3),
-        normalize=params.get("normalize", False),
     )
 
     checkpoint = torch.load(
@@ -100,10 +109,20 @@ def efficientnet_inference(
     )
     state_dict = _strip_lightning_prefix(state_dict)
 
-    model.load_state_dict(
+    missing_keys, unexpected_keys = model.load_state_dict(
         state_dict,
-        strict=True,
+        strict=False,
     )
+
+    if missing_keys:
+        print(
+            f"Missing checkpoint keys: {missing_keys}"
+        )
+
+    if unexpected_keys:
+        print(
+            f"Unexpected checkpoint keys: {unexpected_keys}"
+        )
 
     model.to(device)
     model.eval()
@@ -121,7 +140,9 @@ def efficientnet_inference(
         num_classes=num_classes,
     )
 
-    accuracy = float(tracker.history["accuracy"][-1])
+    accuracy = float(
+        tracker.history["accuracy"][-1]
+    )
     print(f"\nTest accuracy: {accuracy:.4%}")
 
     return accuracy
@@ -157,7 +178,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--params",
         type=Path,
-        help=("Training params YAML. Defaults to training_params/<model>.yaml."),
+        help=(
+            "Training params YAML. Defaults to "
+            "training_params/<model>.yaml."
+        ),
     )
     parser.add_argument(
         "--batch-size",

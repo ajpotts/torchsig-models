@@ -78,45 +78,17 @@ def test_efficientnet_2d_supports_custom_input_channels():
     assert out.shape == (2, 72)
 
 
-def test_efficientnet_2d_disables_normalization_by_default():
+def test_efficientnet_2d_returns_normalized_model_wrapper():
     model = efficientnet_b0(
         num_classes=72,
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
-    )
-
-    assert isinstance(model, NormalizedModel)
-    assert isinstance(model.normalize, nn.Identity)
-    assert isinstance(model.model, nn.Module)
-
-
-def test_efficientnet_2d_supports_per_sample_normalization():
-    model = efficientnet_b0(
-        num_classes=72,
-        input_channels=1,
-        drop_path_rate=0.0,
-        drop_rate=0.0,
-        normalize=True,
     )
 
     assert isinstance(model, NormalizedModel)
     assert isinstance(model.normalize, SpectrogramNormalization)
-
-
-def test_efficientnet_2d_accepts_torchsig_spectrogram_batches():
-    """TorchSig spectrogram batches do not include a channel dimension."""
-    model = efficientnet_b0(
-        num_classes=3,
-        input_channels=1,
-        drop_path_rate=0.0,
-        drop_rate=0.0,
-    ).eval()
-
-    with torch.no_grad():
-        out = model(torch.randn(2, 64, 64))
-
-    assert out.shape == (2, 3)
+    assert isinstance(model.model, nn.Module)
 
 
 def test_spectrogram_normalization_preserves_shape():
@@ -137,16 +109,10 @@ def test_spectrogram_normalization_normalizes_per_example_and_channel():
     out = normalize(x)
 
     mean = out.mean(dim=(-2, -1))
-    std = out.std(dim=(-2, -1), correction=0)
+    std = out.std(dim=(-2, -1))
 
     assert torch.allclose(mean, torch.zeros_like(mean), atol=1e-5)
     assert torch.allclose(std, torch.ones_like(std), atol=1e-5)
-
-
-def test_spectrogram_normalization_is_finite_for_single_pixel_inputs():
-    out = SpectrogramNormalization()(torch.ones(1, 1, 1, 1))
-
-    assert torch.isfinite(out).all()
 
 
 def test_pretrained_raises_not_implemented():

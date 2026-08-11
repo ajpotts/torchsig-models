@@ -1,10 +1,12 @@
-experiment_name: spectrogram_narrowband
+experiment_name: iq_narrowband
 model_name: efficientnet_b2
-normalize: false
 batch_size: 32
 max_epochs: 30
 learning_rate: 0.001
+patience: 5
 weight_decay: 3.0e-6
+pretrained: true
 drop_path: 0.4
 drop_rate: 0.2
+num_channels: 2
 label_smoothing: 0.03

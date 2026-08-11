@@ -58,9 +58,7 @@ class ClassifierMetricsTracker:
 
         self.n_classes = n_classes
         self.device = torch.device(
-            device
-            if device is not None
-            else ("cuda" if torch.cuda.is_available() else "cpu")
+            device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.sync_on_compute = sync_on_compute
 
@@ -394,7 +392,9 @@ class ClassifierMetricsTracker:
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
         ax.set_title(
-            "Confusion Matrix (Normalized)" if normalize else "Confusion Matrix"
+            "Confusion Matrix (Normalized)"
+            if normalize
+            else "Confusion Matrix"
         )
 
         fig.tight_layout()
@@ -586,31 +586,12 @@ class ClassifierMetricsTrackerCallback(Callback):
             phase: Metric prefix (for example, ``"train"`` or ``"val"``).
             metrics: Dictionary of computed metric values.
         """
-        pl_module.log(
-            f"{phase}_loss",
-            metrics["loss"],
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        pl_module.log(
-            f"{phase}_acc",
-            metrics["accuracy"],
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        pl_module.log(
-            f"{phase}_f1",
-            metrics["f1 score"],
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        pl_module.log(
-            f"{phase}_prec", metrics["precision"], on_epoch=True, sync_dist=True
-        )
+        pl_module.log(f"{phase}_loss", metrics["loss"], on_epoch=True, prog_bar=True, sync_dist=True)
+        pl_module.log(f"{phase}_acc", metrics["accuracy"], on_epoch=True, prog_bar=True, sync_dist=True)
+        pl_module.log(f"{phase}_f1", metrics["f1 score"], on_epoch=True, prog_bar=True, sync_dist=True)
+        pl_module.log(f"{phase}_prec", metrics["precision"], on_epoch=True, sync_dist=True)
         pl_module.log(f"{phase}_rec", metrics["recall"], on_epoch=True, sync_dist=True)
+
 
     def save_to_csv(self, metrics_dir: str | Path | None = None) -> None:
         """Save both training and validation metrics to disk.

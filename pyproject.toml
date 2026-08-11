@@ -58,8 +58,6 @@ dependencies = [
     "tensorboardX>=2.6",
     "ultralytics>=8.4",
     "anomalib>=1.0",
-    "optuna",
-    "dotenv",
 ]
 
 
@@ -96,11 +94,6 @@ Changelog = "https://github.com/TorchDSP/torchsig-models/releases"
 [tool.setuptools.packages.find]
 # Automatically find all packages starting in root directory
 where = ["."]
-
-[tool.setuptools.package-data]
-"torchsig_models.models.spectrogram_models.efficientnet" = [
-    "training_params/*.yaml",
-]
 
 [tool.setuptools.dynamic]
 # Dynamically read version from torchsig.__version__

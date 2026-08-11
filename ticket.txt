@@ -1,0 +1,82 @@
+Description
+Implement Optuna/MLflow hyperparameter optimization for the EfficientNet-2D spectrogram training pipeline, matching the capabilities available for EfficientNet-1D.
+Scope
+
+
+        
+      Add a standalone hyperparameter search entry point for EfficientNet-2D.
+
+        
+      Support loading:
+
+
+        
+      training configuration
+
+        
+      optimization configuration
+
+        
+      model parameters
+
+
+
+        
+      Integrate with the shared optimize_params() utility.
+
+        
+      Log trials and metrics using MLflow.
+
+        
+      Support command-line overrides for:
+
+
+        
+      dataset ID
+
+        
+      dataset length
+
+        
+      dataset root
+
+        
+      number of trials
+
+        
+      maximum epochs
+
+        
+      signal generators
+
+        
+      output directory
+
+
+
+        
+      Save optimization artifacts under the configured output directory.
+
+        
+      Report the best metric and hyperparameters after optimization.
+
+Acceptance Criteria
+
+
+        
+      Hyperparameter search runs successfully for EfficientNet-2D models.
+
+        
+      Trials are executed through the shared optimization framework.
+
+        
+      MLflow records parameters and metrics for each trial.
+
+        
+      Command-line overrides function as expected.
+
+        
+      Optimization artifacts are written to the specified output directory.
+
+        
+      Unit tests cover argument parsing, configuration overrides, helper functions, and the optimization workflow using mocks.

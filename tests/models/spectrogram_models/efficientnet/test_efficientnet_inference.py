@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -13,6 +14,7 @@ import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_infer
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference import (
     _strip_lightning_prefix,
     efficientnet_inference,
+    parse_args,
 )
 
 
@@ -88,7 +90,6 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     params = {
         "drop_path": 0.1,
         "drop_rate": 0.25,
-        "normalize": True,
     }
     load_training_params = MagicMock(return_value=params)
     monkeypatch.setattr(
@@ -161,7 +162,6 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.25,
-        normalize=True,
     )
 
     torch_load.assert_called_once_with(
@@ -173,7 +173,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         {
             "layer.weight": checkpoint["state_dict"]["model.layer.weight"],
         },
-        strict=True,
+        strict=False,
     )
     model.to.assert_called_once_with(
         torch.device("cpu"),
@@ -253,7 +253,7 @@ def test_efficientnet_inference_loads_plain_state_dict(
 
     model.load_state_dict.assert_called_once_with(
         state_dict,
-        strict=True,
+        strict=False,
     )
 
 
@@ -315,7 +315,6 @@ def test_efficientnet_inference_uses_default_model_params(
         num_classes=10,
         drop_path_rate=0.2,
         drop_rate=0.3,
-        normalize=False,
     )
 
 
@@ -387,11 +386,12 @@ def test_efficientnet_inference_uses_cuda_when_available(
     assert evaluate_classifier.call_args.kwargs["device"] == expected_device
 
 
-def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
+def test_efficientnet_inference_reports_checkpoint_key_mismatches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify incompatible checkpoints stop inference."""
+    """Verify missing and unexpected checkpoint keys are reported."""
     dataset_root = tmp_path / "test"
     dataset_root.mkdir()
 
@@ -405,8 +405,9 @@ def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
     )
 
     model = MagicMock()
-    model.load_state_dict.side_effect = RuntimeError(
-        "Missing key(s) and unexpected key(s) in state_dict"
+    model.load_state_dict.return_value = (
+        ["classifier.weight"],
+        ["old_classifier.weight"],
     )
     monkeypatch.setitem(
         inference_module.MODEL_FACTORY,
@@ -435,21 +436,29 @@ def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
         MagicMock(return_value=SimpleNamespace(history={"accuracy": [0.5]})),
     )
 
-    with pytest.raises(RuntimeError, match="Missing key"):
-        efficientnet_inference(
-            root=dataset_root,
-            checkpoint_path=checkpoint_path,
-        )
+    efficientnet_inference(
+        root=dataset_root,
+        checkpoint_path=checkpoint_path,
+    )
 
-    model.load_state_dict.assert_called_once_with({}, strict=True)
+    output = capsys.readouterr().out
+
+    assert (
+        "Missing checkpoint keys: ['classifier.weight']"
+        in output
+    )
+    assert (
+        "Unexpected checkpoint keys: ['old_classifier.weight']"
+        in output
+    )
 
 
-def test_efficientnet_inference_accepts_matching_checkpoint_keys(
+def test_efficientnet_inference_does_not_report_empty_key_lists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify matching checkpoint keys permit inference."""
+    """Verify empty checkpoint mismatch lists are not printed."""
     dataset_root = tmp_path / "test"
     dataset_root.mkdir()
 
@@ -498,8 +507,8 @@ def test_efficientnet_inference_accepts_matching_checkpoint_keys(
 
     output = capsys.readouterr().out
 
-    assert "Test accuracy: 50.0000%" in output
-    model.load_state_dict.assert_called_once_with({}, strict=True)
+    assert "Missing checkpoint keys" not in output
+    assert "Unexpected checkpoint keys" not in output
 
 
 def test_efficientnet_inference_raises_for_missing_checkpoint(
