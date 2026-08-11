@@ -256,6 +256,7 @@ class SignalClassifier(pl.LightningModule):
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.clamp_logits = clamp_logits
+        self.best_checkpoint_path: str | None = None
 
     # pylint: disable=arguments-differ
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -491,6 +492,8 @@ def train_validate(
         Tuple containing:
 
         - ``SignalClassifier``: The trained Lightning module.
+          When a best checkpoint is available, its weights are restored and
+          ``best_checkpoint_path`` contains the selected path.
         - ``ClassifierMetricsTrackerCallback``: Callback containing training
           and validation metric histories, confusion matrices, plotting
           utilities, and CSV export functionality.
@@ -498,7 +501,7 @@ def train_validate(
     Notes:
         If ``checkpoint_dir`` is provided, a ``ModelCheckpoint`` callback is
         configured to monitor ``val_f1`` and retain the best-performing model
-        checkpoint.
+        checkpoint. That checkpoint is restored before this function returns.
     """
 
     pl_model = SignalClassifier(
@@ -519,19 +522,19 @@ def train_validate(
     if logger not in (False, None):
         callbacks.append(LearningRateMonitor(logging_interval="epoch"))
 
+    checkpoint_callback: ModelCheckpoint | None = None
     if checkpoint_dir is not None:
         checkpoint_dir = Path(checkpoint_dir)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        callbacks.append(
-            ModelCheckpoint(
-                dirpath=checkpoint_dir,
-                filename="best-epoch={epoch:03d}-val_f1={val_f1:.4f}",
-                save_top_k=1,
-                monitor="val_f1",
-                mode="max",
-            )
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename="best-epoch={epoch:03d}-val_f1={val_f1:.4f}",
+            save_top_k=1,
+            monitor="val_f1",
+            mode="max",
         )
+        callbacks.append(checkpoint_callback)
 
     trainer = pl.Trainer(
         max_epochs=max_epochs,
@@ -550,6 +553,29 @@ def train_validate(
         train_dataloaders=train_loader,
         val_dataloaders=val_loader,
     )
+
+    if checkpoint_callback is not None and checkpoint_callback.best_model_path:
+        best_checkpoint_path = Path(checkpoint_callback.best_model_path)
+        if not best_checkpoint_path.is_file():
+            raise FileNotFoundError(
+                "Best checkpoint reported by Lightning does not exist: "
+                f"{best_checkpoint_path}"
+            )
+
+        checkpoint = torch.load(
+            best_checkpoint_path,
+            map_location="cpu",
+            weights_only=True,
+        )
+        if not isinstance(checkpoint, dict) or not isinstance(
+            checkpoint.get("state_dict"), dict
+        ):
+            raise ValueError(
+                f"Checkpoint does not contain a valid state_dict: {best_checkpoint_path}"
+            )
+
+        pl_model.load_state_dict(checkpoint["state_dict"])
+        pl_model.best_checkpoint_path = str(best_checkpoint_path)
 
     return pl_model, metrics_callback
 

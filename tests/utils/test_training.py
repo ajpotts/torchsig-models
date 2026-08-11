@@ -6,10 +6,10 @@ import pytest
 import tempfile
 import torch
 from pathlib import Path
+from unittest.mock import patch
 
 
 from torchsig_models.utils.training import (
-    train_validate,
     compute_class_weights_tensor,
     compute_num_params,
     set_deterministic,
@@ -125,6 +125,99 @@ def test_compute_num_params_returns_zero_when_all_parameters_frozen():
         param.requires_grad = False
 
     assert compute_num_params(model) == 0
+
+
+def _train_with_mocked_trainer(model, checkpoint_dir, fit_side_effect):
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with patch("torchsig_models.utils.training.pl.Trainer") as trainer_cls:
+        def fake_fit(pl_model, **kwargs):
+            fit_side_effect(
+                pl_model,
+                callbacks=trainer_cls.call_args.kwargs["callbacks"],
+                **kwargs,
+            )
+
+        trainer_cls.return_value.fit.side_effect = fake_fit
+        return train_validate(
+            train_loader=[],
+            val_loader=[],
+            model=model,
+            criterion=torch.nn.CrossEntropyLoss(),
+            optimizer=optimizer,
+            scheduler=None,
+            max_epochs=2,
+            num_classes=2,
+            checkpoint_dir=checkpoint_dir,
+            logger=False,
+        )
+
+
+def test_train_validate_restores_best_checkpoint(tmp_path):
+    model = torch.nn.Linear(2, 2)
+    best_state = {
+        f"model.{key}": torch.full_like(value, 1.0)
+        for key, value in model.state_dict().items()
+    }
+    checkpoint_path = tmp_path / "best.ckpt"
+
+    def fake_fit(pl_model, callbacks, **kwargs):
+        del kwargs
+        with torch.no_grad():
+            for parameter in pl_model.model.parameters():
+                parameter.fill_(2.0)
+        torch.save({"state_dict": best_state}, checkpoint_path)
+        callbacks[-1].best_model_path = str(checkpoint_path)
+
+    pl_model, _ = _train_with_mocked_trainer(model, tmp_path, fake_fit)
+
+    assert all(
+        torch.equal(value, best_state[f"model.{key}"])
+        for key, value in pl_model.model.state_dict().items()
+    )
+    assert pl_model.best_checkpoint_path == str(checkpoint_path)
+
+
+def test_train_validate_without_checkpoint_keeps_final_weights():
+    model = torch.nn.Linear(2, 2)
+
+    def fake_fit(pl_model, callbacks, **kwargs):
+        del callbacks
+        del kwargs
+        with torch.no_grad():
+            for parameter in pl_model.model.parameters():
+                parameter.fill_(2.0)
+
+    pl_model, _ = _train_with_mocked_trainer(model, None, fake_fit)
+
+    assert all(
+        torch.equal(value, torch.full_like(value, 2.0))
+        for value in pl_model.model.state_dict().values()
+    )
+    assert pl_model.best_checkpoint_path is None
+
+
+def test_train_validate_rejects_missing_best_checkpoint(tmp_path):
+    missing_path = tmp_path / "missing.ckpt"
+
+    def fake_fit(pl_model, callbacks, **kwargs):
+        del kwargs
+        callbacks[-1].best_model_path = str(missing_path)
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        _train_with_mocked_trainer(torch.nn.Linear(2, 2), tmp_path, fake_fit)
+
+
+def test_train_validate_rejects_invalid_best_checkpoint(tmp_path):
+    checkpoint_path = tmp_path / "invalid.ckpt"
+    torch.save({"not_state_dict": {}}, checkpoint_path)
+
+    def fake_fit(pl_model, callbacks, **kwargs):
+        del kwargs
+        callbacks[-1].best_model_path = str(checkpoint_path)
+
+    with pytest.raises(ValueError, match="valid state_dict"):
+        _train_with_mocked_trainer(torch.nn.Linear(2, 2), tmp_path, fake_fit)
 
 
 @pytest.mark.slow_no_gpu

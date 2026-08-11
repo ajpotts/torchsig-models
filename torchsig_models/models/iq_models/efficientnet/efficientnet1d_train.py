@@ -128,7 +128,7 @@ def train_efficientnet_iq(
     val_cfg: TorchSigDatasetConfig,
     test_cfg: TorchSigDatasetConfig,
     params: dict[str, Any],
-    checkpoint_dir: str | Path,
+    checkpoint_dir: str | Path | None,
     *,
     metrics_dir: str | Path | None = None,
     dataset_root: str | Path = "datasets",
@@ -147,7 +147,7 @@ def train_efficientnet_iq(
         test_cfg: TorchSig dataset configuration for the test split.
         params: Training parameters, including batch size, learning rate,
             weight decay, and maximum epochs.
-        checkpoint_dir: Directory where model checkpoints are written.
+        checkpoint_dir: Optional directory where model checkpoints are written.
         metrics_dir: Optional directory where metric CSV files are written. If
             omitted, metrics are written under ``checkpoint_dir / "metrics"``.
         dataset_root: Root directory where generated/static datasets are stored.
@@ -160,15 +160,18 @@ def train_efficientnet_iq(
     Returns:
         Dictionary containing the trained Lightning model, wrapped PyTorch model,
         metric trackers, data loaders, class count, parameter count, and dataset
-        preparation metadata.
+        preparation metadata, and the selected best-checkpoint path.
     """
     set_deterministic(int(train_cfg.seed))
 
-    checkpoint_dir = Path(checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir is not None else None
+    if checkpoint_dir is not None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     metrics_dir = (
-        Path(metrics_dir) if metrics_dir is not None else checkpoint_dir / "metrics"
+        Path(metrics_dir)
+        if metrics_dir is not None
+        else (checkpoint_dir / "metrics" if checkpoint_dir is not None else Path("metrics"))
     )
 
     module_logger.info("Preparing datasets...")
@@ -253,6 +256,7 @@ def train_efficientnet_iq(
         "num_classes": num_classes,
         "num_params": compute_num_params(pl_model.model),
         "data_info": data_info,
+        "best_checkpoint_path": pl_model.best_checkpoint_path,
     }
 
 
