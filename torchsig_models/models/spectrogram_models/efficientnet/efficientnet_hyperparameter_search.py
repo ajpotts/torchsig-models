@@ -1,63 +1,75 @@
-"""Optuna and MLflow hyperparameter optimization for EfficientNet-2D."""
+"""Optuna/MLflow hyperparameter optimization for EfficientNet-2D."""
 
 from __future__ import annotations
 
 import argparse
-import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+import logging
 
 import optuna
+import yaml
 from dotenv import load_dotenv
-from pytorch_lightning.loggers import MLFlowLogger
+from pytorch_lightning.loggers import CSVLogger
 
-from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.utils.yaml import load_config_from_yaml
-
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
     EfficientNet2DModelName,
     load_training_params,
     train_efficientnet_2d,
 )
-from torchsig_models.utils.optimization import (
+from torchsig_models.utils.hyperparameter_search import (
     load_search_config,
-    optimize_params,
+    run_hyperparameter_optimization,
 )
 
 
-DEFAULT_OPTIMIZATION_CONFIG = (
-    Path(__file__).parent
-    / "optimization_configs"
-    / "efficientnet_optimization.yaml"
-)
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse EfficientNet-2D optimization command-line arguments."""
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description=(
-            "Optimize EfficientNet-2D hyperparameters with Optuna and MLflow."
+            "Optimize EfficientNet-2D hyperparameters with Optuna and "
+            "optional MLflow tracking."
         )
     )
 
     parser.add_argument(
-        "--config",
+        "--dataset-config",
         type=Path,
-        required=True,
-        help="Path to the TorchSig dataset configuration YAML.",
+        help=(
+            "Dataset config used for train, validation, and test unless a "
+            "split-specific config is provided."
+        ),
     )
     parser.add_argument(
-        "--optimization-config",
+        "--train-config",
         type=Path,
-        default=DEFAULT_OPTIMIZATION_CONFIG,
-        help="Path to the Optuna search configuration YAML.",
+        help="Optional training dataset config.",
     )
     parser.add_argument(
-        "--params",
+        "--val-config",
         type=Path,
-        help="Optional training-parameter YAML.",
+        help="Optional validation dataset config.",
     )
+    parser.add_argument(
+        "--test-config",
+        type=Path,
+        help="Optional test dataset config.",
+    )
+    parser.add_argument(
+        "--search-config",
+        type=Path,
+        default=(
+            Path(__file__).parent
+            / "search_configs"
+            / "efficientnet_b0_search_config.yaml"
+        ),
+    )
+    parser.add_argument("--params", type=Path)
     parser.add_argument(
         "--model",
         choices=[
@@ -66,44 +78,26 @@ def parse_args() -> argparse.Namespace:
             "efficientnet_b4",
         ],
         default="efficientnet_b0",
-        help="EfficientNet-2D architecture to optimize.",
     )
     parser.add_argument(
         "--dataset-root",
         type=Path,
         default=Path("datasets"),
-        help="Root directory for generated static datasets.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("runs/optimization"),
-        help="Root directory for optimization artifacts.",
     )
-    parser.add_argument(
-        "--dataset-length",
-        type=int,
-        help="Override the configured dataset length.",
-    )
-    parser.add_argument(
-        "--dataset-id",
-        help="Override the configured dataset identifier.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing generated datasets.",
-    )
-    parser.add_argument(
-        "--n-trials",
-        type=int,
-        help="Override the configured number of Optuna trials.",
-    )
+    parser.add_argument("--dataset-length", type=int)
+    parser.add_argument("--dataset-id")
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--n-trials", type=int)
     parser.add_argument(
         "--env-file",
         type=Path,
         default=Path(".env"),
-        help="Optional file containing MLflow environment variables.",
+        help="Optional .env file containing MLflow environment variables.",
     )
     parser.add_argument(
         "--max-epochs",
@@ -111,47 +105,83 @@ def parse_args() -> argparse.Namespace:
         help="Override the maximum epochs for each Optuna trial.",
     )
     parser.add_argument(
+        "--enable-mlflow",
+        action="store_true",
+        help="Enable optional MLflow tracking in addition to local trial logs.",
+    )
+    parser.add_argument(
+        "--mlflow-timeout",
+        type=int,
+        default=5,
+        help="MLflow HTTP timeout in seconds.",
+    )
+    parser.add_argument(
+        "--mlflow-max-retries",
+        type=int,
+        default=0,
+        help="Maximum retries for failed MLflow HTTP requests.",
+    )
+    parser.add_argument(
         "--signal-generators",
         default="all",
         help="Signal generators used to create static datasets.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.dataset_config is None and args.train_config is None:
+        parser.error("one of --dataset-config or --train-config is required")
+
+    return args
 
 
 def _load_split_configs(
-    config_path: Path,
-) -> tuple[
-    TorchSigDatasetConfig,
-    TorchSigDatasetConfig,
-    TorchSigDatasetConfig,
-]:
-    """Load train, validation, and test configs with distinct seeds."""
-    train_cfg = load_config_from_yaml(config_path)
-    val_cfg = load_config_from_yaml(config_path)
-    test_cfg = load_config_from_yaml(config_path)
+    *,
+    dataset_config: Path | None,
+    train_config: Path | None,
+    val_config: Path | None,
+    test_config: Path | None,
+) -> tuple[Any, Any, Any]:
+    """Load train, validation, and test dataset configurations.
 
-    base_seed = train_cfg.seed
+    Split-specific configs take precedence over the shared dataset config.
+    Missing validation and test configs fall back to the training config and
+    receive deterministic seed offsets.
+    """
+    resolved_train_path = train_config or dataset_config
 
-    val_cfg = replace(
-        val_cfg,
-        seed=base_seed + 1,
-    )
-    test_cfg = replace(
-        test_cfg,
-        seed=base_seed + 2,
-    )
+    if resolved_train_path is None:
+        raise ValueError("A training dataset config must be provided.")
+
+    resolved_val_path = val_config or dataset_config or resolved_train_path
+    resolved_test_path = test_config or dataset_config or resolved_train_path
+
+    train_cfg = load_config_from_yaml(resolved_train_path)
+    val_cfg = load_config_from_yaml(resolved_val_path)
+    test_cfg = load_config_from_yaml(resolved_test_path)
+
+    if val_config is None:
+        val_cfg = replace(
+            val_cfg,
+            seed=train_cfg.seed + 1,
+        )
+
+    if test_config is None:
+        test_cfg = replace(
+            test_cfg,
+            seed=train_cfg.seed + 2,
+        )
 
     return train_cfg, val_cfg, test_cfg
 
 
 def _apply_dataset_overrides(
-    cfg: TorchSigDatasetConfig,
+    cfg: Any,
     *,
     dataset_length: int | None,
     dataset_id: str | None,
-) -> TorchSigDatasetConfig:
-    """Apply command-line overrides to a dataset configuration."""
+) -> Any:
+    """Apply optional dataset configuration overrides."""
     updates: dict[str, Any] = {}
 
     if dataset_length is not None:
@@ -163,33 +193,14 @@ def _apply_dataset_overrides(
     if not updates:
         return cfg
 
-    return replace(
-        cfg,
-        **updates,
-    )
+    return replace(cfg, **updates)
 
 
-def _create_trial_logger(
-    *,
-    experiment_name: str,
-    trial_number: int,
-) -> MLFlowLogger:
-    """Create an MLflow logger for one Optuna trial."""
-    return MLFlowLogger(
-        experiment_name=experiment_name,
-        run_name=f"trial_{trial_number}",
-        tracking_uri=os.getenv("MLFLOW_TRACKING_URI"),
-    )
-
-
-def _final_metrics(
-    result: dict[str, Any],
-) -> dict[str, Any]:
-    """Add final scalar training and validation metrics to a result."""
+def _final_metrics(result: dict[str, Any]) -> dict[str, float]:
+    """Extract final scalar metrics from a training result."""
     metrics = result["metrics"]
 
     return {
-        **result,
         "val_f1": float(metrics.val_f1s[-1]),
         "val_acc": float(metrics.val_accuracies[-1]),
         "train_f1": float(metrics.train_f1s[-1]),
@@ -197,19 +208,58 @@ def _final_metrics(
     }
 
 
+def _write_best_trial_summary(
+    study: optuna.Study,
+    metric_name: str,
+    base_params: dict[str, Any],
+    output_dir: Path,
+) -> tuple[Path, Path]:
+    """Write best-trial provenance and reusable training parameters."""
+    best_trial = study.best_trial
+    summary = {
+        "trial_number": best_trial.number,
+        "metric_name": metric_name,
+        "metric_value": best_trial.value,
+        "parameters": best_trial.params,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = output_dir / "best_trial.yaml"
+    summary_path.write_text(
+        yaml.safe_dump(
+            summary,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    training_params_path = output_dir / "best_training_params.yaml"
+    training_params_path.write_text(
+        yaml.safe_dump(
+            {
+                **base_params,
+                **best_trial.params,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    return summary_path, training_params_path
+
+
 def main() -> None:
     """Run EfficientNet-2D hyperparameter optimization."""
     args = parse_args()
 
-    if args.env_file.exists():
+    if args.enable_mlflow and args.env_file.exists():
         load_dotenv(args.env_file)
 
-    optimization_config = load_search_config(
-        args.optimization_config
-    )
+    search_config = load_search_config(args.search_config)
 
     train_cfg, val_cfg, test_cfg = _load_split_configs(
-        args.config
+        dataset_config=args.dataset_config,
+        train_config=args.train_config,
+        val_config=args.val_config,
+        test_config=args.test_config,
     )
 
     train_cfg = _apply_dataset_overrides(
@@ -238,50 +288,63 @@ def main() -> None:
     if args.max_epochs is not None:
         base_params["max_epochs"] = args.max_epochs
 
-    metric_name = optimization_config.get(
+    metric_name = search_config.get(
         "metric_name",
         "val_f1",
     )
-    direction = optimization_config.get(
+    direction = search_config.get(
         "direction",
         "maximize",
     )
     n_trials = (
         args.n_trials
         if args.n_trials is not None
-        else optimization_config.get("n_trials", 20)
+        else search_config.get("n_trials", 20)
     )
-    experiment_name = optimization_config.get(
+    experiment_name = search_config.get(
         "experiment_name",
-        "efficientnet_optimization",
+        "efficientnet2d_optimization",
     )
-    run_name = optimization_config.get(
+    run_name = search_config.get(
         "run_name",
         f"{model_name}_optimization",
     )
-    search_space = optimization_config["search_space"]
+    search_space = search_config["search_space"]
+
+    optimization_dir = args.output_dir / train_cfg.dataset_id / model_name
 
     def train_fn(
         params: dict[str, Any],
         trial_dir: Path,
         trial: optuna.Trial,
     ) -> dict[str, Any]:
-        """Train and evaluate one Optuna trial."""
-        logger = _create_trial_logger(
-            experiment_name=experiment_name,
-            trial_number=trial.number,
+        """Train one Optuna trial using local Lightning logging."""
+        logger.info(
+            "Starting trial %s in %s",
+            trial.number,
+            trial_dir.resolve(),
         )
 
         trial_params = params.copy()
         trial_params.pop("model_name", None)
 
-        logger.log_hyperparams(trial_params)
-        logger.log_hyperparams(
+        training_logger = CSVLogger(
+            save_dir=trial_dir,
+            name="lightning_logs",
+            version="",
+        )
+
+        training_logger.log_hyperparams(
             {
+                **trial_params,
                 "trial_number": trial.number,
                 "model_name": model_name,
-                "dataset_id": train_cfg.dataset_id,
-                "dataset_length": train_cfg.dataset_length,
+                "train_dataset_id": train_cfg.dataset_id,
+                "val_dataset_id": val_cfg.dataset_id,
+                "test_dataset_id": test_cfg.dataset_id,
+                "train_dataset_length": train_cfg.dataset_length,
+                "val_dataset_length": val_cfg.dataset_length,
+                "test_dataset_length": test_cfg.dataset_length,
                 "train_seed": train_cfg.seed,
                 "val_seed": val_cfg.seed,
                 "test_seed": test_cfg.seed,
@@ -299,12 +362,15 @@ def main() -> None:
             overwrite=args.overwrite,
             model_name=model_name,
             signal_generators=args.signal_generators,
-            logger=logger,
+            logger=training_logger,
         )
 
-        return _final_metrics(result)
+        return {
+            **result,
+            **_final_metrics(result),
+        }
 
-    study = optimize_params(
+    study = run_hyperparameter_optimization(
         base_params=base_params,
         search_space=search_space,
         train_fn=train_fn,
@@ -313,19 +379,20 @@ def main() -> None:
         n_trials=n_trials,
         experiment_name=experiment_name,
         run_name=run_name,
-        output_dir=(
-            args.output_dir
-            / train_cfg.dataset_id
-            / model_name
-        ),
+        output_dir=optimization_dir,
+        mlflow_enabled=args.enable_mlflow,
+        mlflow_timeout_seconds=args.mlflow_timeout,
+        mlflow_max_retries=args.mlflow_max_retries,
     )
 
-    print("Optimization complete.")
-    print(f"Best {metric_name}: {study.best_value:.4f}")
-    print("Best params:")
-
-    for key, value in study.best_params.items():
-        print(f"  {key}: {value}")
+    summary_path, training_params_path = _write_best_trial_summary(
+        study,
+        metric_name,
+        base_params,
+        optimization_dir,
+    )
+    logger.info("Best-trial summary saved to %s", summary_path)
+    logger.info("Best training parameters saved to %s", training_params_path)
 
 
 if __name__ == "__main__":

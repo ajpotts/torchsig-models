@@ -1,529 +1,657 @@
-"""Tests for EfficientNet-2D hyperparameter optimization."""
+"""Tests for the EfficientNet-2D hyperparameter search CLI."""
 
 from __future__ import annotations
 
-import sys
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call
+from typing import Any
+from unittest.mock import Mock
 
+import optuna
 import pytest
+import yaml
 
 import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_hyperparameter_search as search_module
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_hyperparameter_search import (
-    DEFAULT_OPTIMIZATION_CONFIG,
     _apply_dataset_overrides,
-    _create_trial_logger,
     _final_metrics,
+    _write_best_trial_summary,
     _load_split_configs,
     main,
     parse_args,
 )
 
 
-@dataclass(frozen=True)
-class DummyConfig:
-    """Minimal immutable dataset configuration for testing."""
+@dataclass
+class FakeDatasetConfig:
+    """Minimal dataset config supporting dataclasses.replace."""
 
-    dataset_id: str = "dummy_dataset"
-    dataset_length: int = 100
-    seed: int = 42
+    dataset_id: str
+    dataset_length: int
+    seed: int
 
 
-def test_parse_args_uses_defaults(
+class FakeCSVLogger:
+    """Record CSVLogger initialization and hyperparameter logging."""
+
+    instances: list[FakeCSVLogger] = []
+
+    def __init__(
+        self,
+        *,
+        save_dir: Path,
+        name: str,
+        version: str,
+    ) -> None:
+        self.save_dir = save_dir
+        self.name = name
+        self.version = version
+        self.hyperparameters: dict[str, Any] | None = None
+
+        self.instances.append(self)
+
+    def log_hyperparams(
+        self,
+        params: dict[str, Any],
+    ) -> None:
+        self.hyperparameters = params
+
+
+@pytest.fixture(autouse=True)
+def clear_fake_loggers() -> None:
+    """Clear recorded fake logger instances between tests."""
+    FakeCSVLogger.instances.clear()
+
+
+def test_parse_args_accepts_shared_dataset_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify required arguments and optimization defaults."""
-    config_path = tmp_path / "dataset.yaml"
+    """Accept one dataset config for all dataset splits."""
+    dataset_config = tmp_path / "dataset.yaml"
 
     monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "efficientnet_hyperparameter_search.py",
-            "--config",
-            str(config_path),
-        ],
+        search_module.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            dataset_config=dataset_config,
+            train_config=None,
+            val_config=None,
+            test_config=None,
+            search_config=tmp_path / "search.yaml",
+            params=None,
+            model="efficientnet_b0",
+            dataset_root=tmp_path / "datasets",
+            output_dir=tmp_path / "runs",
+            dataset_length=None,
+            dataset_id=None,
+            overwrite=False,
+            n_trials=None,
+            env_file=tmp_path / ".env",
+            max_epochs=None,
+            enable_mlflow=False,
+            mlflow_timeout=5,
+            mlflow_max_retries=0,
+            signal_generators="all",
+        ),
     )
 
     args = parse_args()
 
-    assert args.config == config_path
-    assert args.optimization_config == DEFAULT_OPTIMIZATION_CONFIG
-    assert args.params is None
-    assert args.model == "efficientnet_b0"
-    assert args.dataset_root == Path("datasets")
-    assert args.output_dir == Path("runs/optimization")
-    assert args.dataset_length is None
-    assert args.dataset_id is None
-    assert args.overwrite is False
-    assert args.n_trials is None
-    assert args.env_file == Path(".env")
-    assert args.max_epochs is None
-    assert args.signal_generators == "all"
+    assert args.dataset_config == dataset_config
+    assert args.train_config is None
 
 
-def test_parse_args_reads_overrides(
+def test_parse_args_accepts_train_config_without_shared_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify all supported command-line overrides are parsed."""
-    config_path = tmp_path / "dataset.yaml"
-    optimization_path = tmp_path / "optimization.yaml"
-    params_path = tmp_path / "params.yaml"
-    env_path = tmp_path / "mlflow.env"
+    """Accept a split-specific training config without a shared config."""
+    train_config = tmp_path / "train.yaml"
 
     monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "efficientnet_hyperparameter_search.py",
-            "--config",
-            str(config_path),
-            "--optimization-config",
-            str(optimization_path),
-            "--params",
-            str(params_path),
-            "--model",
-            "efficientnet_b4",
-            "--dataset-root",
-            "custom-datasets",
-            "--output-dir",
-            "custom-runs",
-            "--dataset-length",
-            "500",
-            "--dataset-id",
-            "custom_dataset",
-            "--overwrite",
-            "--n-trials",
-            "12",
-            "--env-file",
-            str(env_path),
-            "--max-epochs",
-            "7",
-            "--signal-generators",
-            "fm-data",
-        ],
+        search_module.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            dataset_config=None,
+            train_config=train_config,
+            val_config=None,
+            test_config=None,
+            search_config=tmp_path / "search.yaml",
+            params=None,
+            model="efficientnet_b0",
+            dataset_root=tmp_path / "datasets",
+            output_dir=tmp_path / "runs",
+            dataset_length=None,
+            dataset_id=None,
+            overwrite=False,
+            n_trials=None,
+            env_file=tmp_path / ".env",
+            max_epochs=None,
+            enable_mlflow=False,
+            mlflow_timeout=5,
+            mlflow_max_retries=0,
+            signal_generators="all",
+        ),
     )
 
     args = parse_args()
 
-    assert args.config == config_path
-    assert args.optimization_config == optimization_path
-    assert args.params == params_path
-    assert args.model == "efficientnet_b4"
-    assert args.dataset_root == Path("custom-datasets")
-    assert args.output_dir == Path("custom-runs")
-    assert args.dataset_length == 500
-    assert args.dataset_id == "custom_dataset"
-    assert args.overwrite is True
-    assert args.n_trials == 12
-    assert args.env_file == env_path
-    assert args.max_epochs == 7
-    assert args.signal_generators == "fm-data"
+    assert args.dataset_config is None
+    assert args.train_config == train_config
 
 
-def test_load_split_configs_assigns_distinct_seeds(
+def test_parse_args_requires_dataset_or_train_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject calls without a shared or training dataset config."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["efficientnet_hyperparameter_search.py"],
+    )
+
+    with pytest.raises(SystemExit):
+        parse_args()
+
+
+def test_load_split_configs_uses_shared_config_for_all_splits(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify train, validation, and test configs use consecutive seeds."""
-    config_path = tmp_path / "dataset.yaml"
-    load_config = MagicMock(
-        side_effect=[
-            DummyConfig(seed=10),
-            DummyConfig(seed=10),
-            DummyConfig(seed=10),
-        ]
-    )
+    """Use a shared config and offset validation and test seeds."""
+    dataset_path = tmp_path / "dataset.yaml"
+
+    def fake_load_config(path: Path) -> FakeDatasetConfig:
+        assert path == dataset_path
+
+        return FakeDatasetConfig(
+            dataset_id="shared",
+            dataset_length=100,
+            seed=10,
+        )
+
     monkeypatch.setattr(
         search_module,
         "load_config_from_yaml",
-        load_config,
+        fake_load_config,
     )
 
-    train_cfg, val_cfg, test_cfg = _load_split_configs(config_path)
+    train_cfg, val_cfg, test_cfg = _load_split_configs(
+        dataset_config=dataset_path,
+        train_config=None,
+        val_config=None,
+        test_config=None,
+    )
 
-    assert load_config.call_args_list == [
-        call(config_path),
-        call(config_path),
-        call(config_path),
-    ]
     assert train_cfg.seed == 10
     assert val_cfg.seed == 11
     assert test_cfg.seed == 12
 
+    assert train_cfg.dataset_id == "shared"
+    assert val_cfg.dataset_id == "shared"
+    assert test_cfg.dataset_id == "shared"
 
-def test_apply_dataset_overrides_updates_requested_values() -> None:
-    """Verify dataset length and identifier overrides are applied."""
-    cfg = DummyConfig()
 
-    result = _apply_dataset_overrides(
-        cfg,
-        dataset_length=250,
-        dataset_id="overridden_dataset",
+def test_load_split_configs_prefers_explicit_split_configs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Preserve explicitly configured split seeds."""
+    train_path = tmp_path / "train.yaml"
+    val_path = tmp_path / "val.yaml"
+    test_path = tmp_path / "test.yaml"
+
+    configs = {
+        train_path: FakeDatasetConfig(
+            dataset_id="train",
+            dataset_length=100,
+            seed=10,
+        ),
+        val_path: FakeDatasetConfig(
+            dataset_id="val",
+            dataset_length=20,
+            seed=40,
+        ),
+        test_path: FakeDatasetConfig(
+            dataset_id="test",
+            dataset_length=20,
+            seed=70,
+        ),
+    }
+
+    monkeypatch.setattr(
+        search_module,
+        "load_config_from_yaml",
+        lambda path: configs[path],
     )
 
-    assert result.dataset_length == 250
-    assert result.dataset_id == "overridden_dataset"
-    assert result.seed == cfg.seed
-    assert result is not cfg
+    train_cfg, val_cfg, test_cfg = _load_split_configs(
+        dataset_config=None,
+        train_config=train_path,
+        val_config=val_path,
+        test_config=test_path,
+    )
+
+    assert train_cfg == configs[train_path]
+    assert val_cfg == configs[val_path]
+    assert test_cfg == configs[test_path]
+
+    assert val_cfg.seed == 40
+    assert test_cfg.seed == 70
 
 
-def test_apply_dataset_overrides_preserves_unset_values() -> None:
-    """Verify a partial override leaves other values unchanged."""
-    cfg = DummyConfig()
+def test_load_split_configs_falls_back_to_train_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Use the training config when validation and test configs are absent."""
+    train_path = tmp_path / "train.yaml"
 
-    result = _apply_dataset_overrides(
-        cfg,
-        dataset_length=250,
+    monkeypatch.setattr(
+        search_module,
+        "load_config_from_yaml",
+        lambda path: FakeDatasetConfig(
+            dataset_id="train",
+            dataset_length=100,
+            seed=5,
+        ),
+    )
+
+    train_cfg, val_cfg, test_cfg = _load_split_configs(
+        dataset_config=None,
+        train_config=train_path,
+        val_config=None,
+        test_config=None,
+    )
+
+    assert train_cfg.seed == 5
+    assert val_cfg.seed == 6
+    assert test_cfg.seed == 7
+
+
+def test_load_split_configs_requires_training_config() -> None:
+    """Reject calls that cannot resolve a training configuration."""
+    with pytest.raises(
+        ValueError,
+        match="A training dataset config must be provided",
+    ):
+        _load_split_configs(
+            dataset_config=None,
+            train_config=None,
+            val_config=None,
+            test_config=None,
+        )
+
+
+def test_apply_dataset_overrides() -> None:
+    """Apply dataset length and ID overrides."""
+    original = FakeDatasetConfig(
+        dataset_id="original",
+        dataset_length=1_000,
+        seed=10,
+    )
+
+    updated = _apply_dataset_overrides(
+        original,
+        dataset_length=100,
+        dataset_id="smoke-test",
+    )
+
+    assert updated == FakeDatasetConfig(
+        dataset_id="smoke-test",
+        dataset_length=100,
+        seed=10,
+    )
+    assert updated is not original
+
+
+def test_apply_dataset_overrides_supports_partial_override() -> None:
+    """Only replace fields whose overrides are provided."""
+    original = FakeDatasetConfig(
+        dataset_id="original",
+        dataset_length=1_000,
+        seed=10,
+    )
+
+    updated = _apply_dataset_overrides(
+        original,
+        dataset_length=100,
         dataset_id=None,
     )
 
-    assert result.dataset_length == 250
-    assert result.dataset_id == cfg.dataset_id
+    assert updated.dataset_id == "original"
+    assert updated.dataset_length == 100
+    assert updated.seed == 10
 
 
-def test_apply_dataset_overrides_returns_same_config_without_updates() -> None:
-    """Verify no replacement occurs when no overrides are supplied."""
-    cfg = DummyConfig()
+def test_apply_dataset_overrides_returns_original_when_unchanged() -> None:
+    """Avoid replacing a config when no overrides are supplied."""
+    original = FakeDatasetConfig(
+        dataset_id="original",
+        dataset_length=1_000,
+        seed=10,
+    )
 
     result = _apply_dataset_overrides(
-        cfg,
+        original,
         dataset_length=None,
         dataset_id=None,
     )
 
-    assert result is cfg
+    assert result is original
 
 
-def test_create_trial_logger_uses_mlflow_environment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify trial logger construction uses the MLflow tracking URI."""
-    logger = MagicMock()
-    logger_cls = MagicMock(return_value=logger)
-
-    monkeypatch.setattr(
-        search_module,
-        "MLFlowLogger",
-        logger_cls,
-    )
-    monkeypatch.setenv(
-        "MLFLOW_TRACKING_URI",
-        "http://mlflow.example",
-    )
-
-    result = _create_trial_logger(
-        experiment_name="efficientnet-tests",
-        trial_number=4,
-    )
-
-    logger_cls.assert_called_once_with(
-        experiment_name="efficientnet-tests",
-        run_name="trial_4",
-        tracking_uri="http://mlflow.example",
-    )
-    assert result is logger
-
-
-def test_final_metrics_adds_latest_scalar_metrics() -> None:
-    """Verify final metric-history values are added to the result."""
-    metrics = SimpleNamespace(
-        val_f1s=[0.5, 0.8],
-        val_accuracies=[0.6, 0.85],
-        train_f1s=[0.7, 0.9],
-        train_accuracies=[0.75, 0.95],
-    )
+def test_final_metrics_extracts_latest_values() -> None:
+    """Extract the final scalar value from each metric history."""
     result = {
-        "model": object(),
-        "metrics": metrics,
+        "metrics": SimpleNamespace(
+            val_f1s=[0.50, 0.75],
+            val_accuracies=[0.60, 0.80],
+            train_f1s=[0.70, 0.90],
+            train_accuracies=[0.75, 0.95],
+        )
     }
 
-    final_result = _final_metrics(result)
-
-    assert final_result["model"] is result["model"]
-    assert final_result["metrics"] is metrics
-    assert final_result["val_f1"] == pytest.approx(0.8)
-    assert final_result["val_acc"] == pytest.approx(0.85)
-    assert final_result["train_f1"] == pytest.approx(0.9)
-    assert final_result["train_acc"] == pytest.approx(0.95)
+    assert _final_metrics(result) == {
+        "val_f1": pytest.approx(0.75),
+        "val_acc": pytest.approx(0.80),
+        "train_f1": pytest.approx(0.90),
+        "train_acc": pytest.approx(0.95),
+    }
 
 
-def test_main_runs_optimization(
+def test_best_trial_summary_uses_best_not_last_trial(tmp_path: Path) -> None:
+    """Report parameters from the best trial when the last trial is worse."""
+    study = optuna.create_study(direction="maximize")
+    distribution = optuna.distributions.FloatDistribution(1e-5, 1e-2)
+    study.add_trial(
+        optuna.trial.create_trial(
+            params={"learning_rate": 0.001},
+            distributions={"learning_rate": distribution},
+            value=0.9,
+        )
+    )
+    study.add_trial(
+        optuna.trial.create_trial(
+            params={"learning_rate": 0.009},
+            distributions={"learning_rate": distribution},
+            value=0.2,
+        )
+    )
+
+    summary_path, training_params_path = _write_best_trial_summary(
+        study,
+        "val_f1",
+        {
+            "model_name": "efficientnet_b0",
+            "max_epochs": 30,
+            "learning_rate": 0.0005,
+            "pretrained": True,
+        },
+        tmp_path,
+    )
+    summary = yaml.safe_load(summary_path.read_text(encoding="utf-8"))
+    training_params = yaml.safe_load(training_params_path.read_text(encoding="utf-8"))
+
+    assert summary_path == tmp_path / "best_trial.yaml"
+    assert summary == {
+        "trial_number": 0,
+        "metric_name": "val_f1",
+        "metric_value": pytest.approx(0.9),
+        "parameters": {"learning_rate": pytest.approx(0.001)},
+    }
+    assert training_params_path == tmp_path / "best_training_params.yaml"
+    assert training_params == {
+        "model_name": "efficientnet_b0",
+        "max_epochs": 30,
+        "learning_rate": pytest.approx(0.001),
+        "pretrained": True,
+    }
+
+
+def test_main_configures_and_runs_optimization(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify the complete optimization workflow and trial callback."""
-    config_path = tmp_path / "dataset.yaml"
-    optimization_path = tmp_path / "optimization.yaml"
-    params_path = tmp_path / "params.yaml"
-    env_path = tmp_path / ".env"
-    env_path.touch()
-
+    """Wire dataset configs, training, logging, and Optuna together."""
+    dataset_path = tmp_path / "dataset.yaml"
+    search_path = tmp_path / "search.yaml"
+    output_dir = tmp_path / "optimization"
     dataset_root = tmp_path / "datasets"
-    output_dir = tmp_path / "runs"
 
-    args = SimpleNamespace(
-        config=config_path,
-        optimization_config=optimization_path,
-        params=params_path,
-        model="efficientnet_b2",
+    args = argparse.Namespace(
+        dataset_config=dataset_path,
+        train_config=None,
+        val_config=None,
+        test_config=None,
+        search_config=search_path,
+        params=None,
+        model="efficientnet_b0",
         dataset_root=dataset_root,
         output_dir=output_dir,
-        dataset_length=500,
-        dataset_id="overridden_dataset",
+        dataset_length=100,
+        dataset_id="overridden-dataset",
         overwrite=True,
-        n_trials=7,
-        env_file=env_path,
-        max_epochs=3,
-        signal_generators="fm-data",
+        n_trials=3,
+        env_file=tmp_path / ".env",
+        max_epochs=1,
+        enable_mlflow=False,
+        mlflow_timeout=7,
+        mlflow_max_retries=2,
+        signal_generators="all",
     )
+
     monkeypatch.setattr(
         search_module,
         "parse_args",
-        MagicMock(return_value=args),
+        lambda: args,
     )
 
-    load_dotenv = MagicMock()
-    monkeypatch.setattr(
-        search_module,
-        "load_dotenv",
-        load_dotenv,
-    )
-
-    optimization_config = {
-        "metric_name": "val_acc",
-        "direction": "maximize",
-        "n_trials": 20,
-        "experiment_name": "efficientnet2d_test",
-        "run_name": "test_search",
-        "search_space": {
-            "learning_rate": {
-                "type": "float",
-                "low": 1e-5,
-                "high": 1e-3,
-            }
-        },
-    }
-    load_search_config = MagicMock(
-        return_value=optimization_config
-    )
     monkeypatch.setattr(
         search_module,
         "load_search_config",
-        load_search_config,
+        lambda path: {
+            "metric_name": "val_f1",
+            "direction": "maximize",
+            "n_trials": 20,
+            "experiment_name": "efficientnet-search",
+            "run_name": "efficientnet-b0-search",
+            "search_space": {
+                "learning_rate": {
+                    "type": "float",
+                    "low": 1e-5,
+                    "high": 1e-2,
+                    "log": True,
+                }
+            },
+        },
     )
 
-    train_cfg = DummyConfig(seed=20)
-    val_cfg = DummyConfig(seed=21)
-    test_cfg = DummyConfig(seed=22)
-    load_split_configs = MagicMock(
-        return_value=(train_cfg, val_cfg, test_cfg)
-    )
     monkeypatch.setattr(
         search_module,
-        "_load_split_configs",
-        load_split_configs,
+        "load_config_from_yaml",
+        lambda path: FakeDatasetConfig(
+            dataset_id="original-dataset",
+            dataset_length=10_000,
+            seed=10,
+        ),
     )
 
-    base_params = {
-        "learning_rate": 1e-3,
-        "max_epochs": 10,
-    }
-    load_training_params = MagicMock(
-        return_value=base_params
-    )
     monkeypatch.setattr(
         search_module,
         "load_training_params",
-        load_training_params,
-    )
-
-    logger = MagicMock()
-    create_trial_logger = MagicMock(return_value=logger)
-    monkeypatch.setattr(
-        search_module,
-        "_create_trial_logger",
-        create_trial_logger,
-    )
-
-    metrics = SimpleNamespace(
-        val_f1s=[0.81],
-        val_accuracies=[0.84],
-        train_f1s=[0.91],
-        train_accuracies=[0.94],
-    )
-    training_result = {
-        "model": object(),
-        "metrics": metrics,
-    }
-    train_efficientnet = MagicMock(
-        return_value=training_result
-    )
-    monkeypatch.setattr(
-        search_module,
-        "train_efficientnet_2d",
-        train_efficientnet,
-    )
-
-    study = SimpleNamespace(
-        best_value=0.84,
-        best_params={
-            "learning_rate": 5e-4,
+        lambda model_name, params_path: {
+            "model_name": model_name,
+            "max_epochs": 50,
             "batch_size": 32,
         },
     )
 
-    def fake_optimize_params(**kwargs):
-        trial_params = {
-            "model_name": "efficientnet_b2",
-            "learning_rate": 5e-4,
-            "batch_size": 32,
-        }
-        trial_dir = tmp_path / "trial_3"
-        trial = SimpleNamespace(number=3)
-
-        result = kwargs["train_fn"](
-            trial_params,
-            trial_dir,
-            trial,
-        )
-
-        assert result["val_f1"] == pytest.approx(0.81)
-        assert result["val_acc"] == pytest.approx(0.84)
-        assert result["train_f1"] == pytest.approx(0.91)
-        assert result["train_acc"] == pytest.approx(0.94)
-
-        # The callback must not mutate the dictionary supplied by Optuna.
-        assert trial_params["model_name"] == "efficientnet_b2"
-
-        return study
-
-    optimize_params = MagicMock(
-        side_effect=fake_optimize_params
-    )
     monkeypatch.setattr(
         search_module,
-        "optimize_params",
-        optimize_params,
+        "CSVLogger",
+        FakeCSVLogger,
+    )
+
+    training_calls: list[dict[str, Any]] = []
+
+    def fake_train_efficientnet_2d(
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        training_calls.append(kwargs)
+
+        return {
+            "metrics": SimpleNamespace(
+                val_f1s=[0.80],
+                val_accuracies=[0.85],
+                train_f1s=[0.90],
+                train_accuracies=[0.95],
+            ),
+            "num_params": 123_456,
+        }
+
+    monkeypatch.setattr(
+        search_module,
+        "train_efficientnet_2d",
+        fake_train_efficientnet_2d,
+    )
+
+    optimization_arguments: dict[str, Any] = {}
+
+    def fake_run_hyperparameter_optimization(
+        **kwargs: Any,
+    ) -> SimpleNamespace:
+        optimization_arguments.update(kwargs)
+
+        trial_dir = Path(kwargs["output_dir"]) / "trial_0000"
+        trial_dir.mkdir(parents=True)
+
+        result = kwargs["train_fn"](
+            {
+                **kwargs["base_params"],
+                "learning_rate": 0.001,
+            },
+            trial_dir,
+            SimpleNamespace(number=0),
+        )
+
+        assert result["val_f1"] == pytest.approx(0.80)
+        assert result["val_acc"] == pytest.approx(0.85)
+        assert result["train_f1"] == pytest.approx(0.90)
+        assert result["train_acc"] == pytest.approx(0.95)
+
+        return SimpleNamespace(
+            best_value=0.80,
+            best_params={"learning_rate": 0.001},
+            best_trial=SimpleNamespace(
+                number=0,
+                value=0.80,
+                params={"learning_rate": 0.001},
+            ),
+        )
+
+    monkeypatch.setattr(
+        search_module,
+        "run_hyperparameter_optimization",
+        fake_run_hyperparameter_optimization,
+    )
+
+    # Avoid coupling this test to logging formatting.
+    monkeypatch.setattr(
+        search_module,
+        "logger",
+        Mock(),
     )
 
     main()
 
-    load_dotenv.assert_called_once_with(env_path)
-    load_search_config.assert_called_once_with(
-        optimization_path
-    )
-    load_split_configs.assert_called_once_with(config_path)
-    load_training_params.assert_called_once_with(
-        "efficientnet_b2",
-        params_path=params_path,
-    )
-
-    assert base_params["max_epochs"] == 3
-
-    create_trial_logger.assert_called_once_with(
-        experiment_name="efficientnet2d_test",
-        trial_number=3,
-    )
-
-    logger.log_hyperparams.assert_has_calls(
-        [
-            call(
-                {
-                    "learning_rate": 5e-4,
-                    "batch_size": 32,
-                }
-            ),
-            call(
-                {
-                    "trial_number": 3,
-                    "model_name": "efficientnet_b2",
-                    "dataset_id": "overridden_dataset",
-                    "dataset_length": 500,
-                    "train_seed": 20,
-                    "val_seed": 21,
-                    "test_seed": 22,
-                }
-            ),
-        ]
-    )
-
-    train_efficientnet.assert_called_once_with(
-        train_cfg=DummyConfig(
-            dataset_id="overridden_dataset",
-            dataset_length=500,
-            seed=20,
-        ),
-        val_cfg=DummyConfig(
-            dataset_id="overridden_dataset",
-            dataset_length=500,
-            seed=21,
-        ),
-        test_cfg=DummyConfig(
-            dataset_id="overridden_dataset",
-            dataset_length=500,
-            seed=22,
-        ),
-        params={
-            "learning_rate": 5e-4,
-            "batch_size": 32,
-        },
-        checkpoint_dir=tmp_path / "trial_3" / "checkpoints",
-        metrics_dir=tmp_path / "trial_3" / "metrics",
-        dataset_root=dataset_root,
-        overwrite=True,
-        model_name="efficientnet_b2",
-        signal_generators="fm-data",
-        logger=logger,
-    )
-
-    optimize_params.assert_called_once()
-    optimize_kwargs = optimize_params.call_args.kwargs
-
-    assert optimize_kwargs["base_params"] == {
-        "learning_rate": 1e-3,
-        "max_epochs": 3,
+    assert optimization_arguments["base_params"] == {
+        "model_name": "efficientnet_b0",
+        "max_epochs": 1,
+        "batch_size": 32,
     }
+    assert optimization_arguments["metric_name"] == "val_f1"
+    assert optimization_arguments["direction"] == "maximize"
+
+    # CLI value takes precedence over the YAML value of 20.
+    assert optimization_arguments["n_trials"] == 3
+
     assert (
-        optimize_kwargs["search_space"]
-        == optimization_config["search_space"]
+        optimization_arguments["output_dir"]
+        == output_dir / "overridden-dataset" / "efficientnet_b0"
     )
-    assert optimize_kwargs["metric_name"] == "val_acc"
-    assert optimize_kwargs["direction"] == "maximize"
-    assert optimize_kwargs["n_trials"] == 7
-    assert (
-        optimize_kwargs["experiment_name"]
-        == "efficientnet2d_test"
+    assert optimization_arguments["mlflow_enabled"] is False
+    assert optimization_arguments["mlflow_timeout_seconds"] == 7
+    assert optimization_arguments["mlflow_max_retries"] == 2
+
+    assert len(training_calls) == 1
+
+    training_call = training_calls[0]
+
+    assert training_call["train_cfg"] == FakeDatasetConfig(
+        dataset_id="overridden-dataset",
+        dataset_length=100,
+        seed=10,
     )
-    assert optimize_kwargs["run_name"] == "test_search"
-    assert optimize_kwargs["output_dir"] == (
-        output_dir
-        / "overridden_dataset"
-        / "efficientnet_b2"
+    assert training_call["val_cfg"] == FakeDatasetConfig(
+        dataset_id="overridden-dataset",
+        dataset_length=100,
+        seed=11,
     )
-    assert callable(optimize_kwargs["train_fn"])
+    assert training_call["test_cfg"] == FakeDatasetConfig(
+        dataset_id="overridden-dataset",
+        dataset_length=100,
+        seed=12,
+    )
 
-    output = capsys.readouterr().out
+    assert training_call["params"] == {
+        "max_epochs": 1,
+        "batch_size": 32,
+        "learning_rate": 0.001,
+    }
+    assert "model_name" not in training_call["params"]
 
-    assert "Optimization complete." in output
-    assert "Best val_acc: 0.8400" in output
-    assert "learning_rate: 0.0005" in output
-    assert "batch_size: 32" in output
+    assert training_call["dataset_root"] == dataset_root
+    assert training_call["overwrite"] is True
+    assert training_call["model_name"] == "efficientnet_b0"
+
+    assert training_call["signal_generators"] == "all"
+
+    trial_dir = output_dir / "overridden-dataset" / "efficientnet_b0" / "trial_0000"
+
+    assert training_call["checkpoint_dir"] == (trial_dir / "checkpoints")
+    assert training_call["metrics_dir"] == (trial_dir / "metrics")
+
+    assert len(FakeCSVLogger.instances) == 1
+
+    csv_logger = FakeCSVLogger.instances[0]
+
+    assert csv_logger.save_dir == trial_dir
+    assert csv_logger.name == "lightning_logs"
+    assert csv_logger.version == ""
+
+    assert csv_logger.hyperparameters is not None
+    assert csv_logger.hyperparameters["trial_number"] == 0
+    assert csv_logger.hyperparameters["model_name"] == "efficientnet_b0"
+    assert csv_logger.hyperparameters["train_dataset_length"] == 100
+    assert csv_logger.hyperparameters["train_seed"] == 10
+    assert csv_logger.hyperparameters["val_seed"] == 11
+    assert csv_logger.hyperparameters["test_seed"] == 12
 
 
-def test_main_skips_missing_env_file(
+def test_main_uses_search_config_trial_count_when_not_overridden(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify dotenv loading is skipped when the file does not exist."""
-    args = SimpleNamespace(
-        config=tmp_path / "dataset.yaml",
-        optimization_config=tmp_path / "optimization.yaml",
+    """Use the YAML trial count when --n-trials is absent."""
+    args = argparse.Namespace(
+        dataset_config=tmp_path / "dataset.yaml",
+        train_config=None,
+        val_config=None,
+        test_config=None,
+        search_config=tmp_path / "search.yaml",
         params=None,
         model="efficientnet_b0",
         dataset_root=tmp_path / "datasets",
@@ -532,54 +660,241 @@ def test_main_skips_missing_env_file(
         dataset_id=None,
         overwrite=False,
         n_trials=None,
-        env_file=tmp_path / "missing.env",
+        env_file=tmp_path / ".env",
         max_epochs=None,
+        enable_mlflow=False,
+        mlflow_timeout=5,
+        mlflow_max_retries=0,
         signal_generators="all",
     )
-    monkeypatch.setattr(
-        search_module,
-        "parse_args",
-        MagicMock(return_value=args),
-    )
 
-    load_dotenv = MagicMock()
-    monkeypatch.setattr(
-        search_module,
-        "load_dotenv",
-        load_dotenv,
-    )
-
-    config = DummyConfig()
-    monkeypatch.setattr(
-        search_module,
-        "_load_split_configs",
-        MagicMock(return_value=(config, config, config)),
-    )
+    monkeypatch.setattr(search_module, "parse_args", lambda: args)
     monkeypatch.setattr(
         search_module,
         "load_search_config",
-        MagicMock(
-            return_value={
-                "search_space": {},
-            }
+        lambda path: {
+            "n_trials": 7,
+            "search_space": {},
+        },
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_config_from_yaml",
+        lambda path: FakeDatasetConfig(
+            dataset_id="dataset",
+            dataset_length=100,
+            seed=1,
         ),
     )
     monkeypatch.setattr(
         search_module,
         "load_training_params",
-        MagicMock(return_value={}),
+        lambda model_name, params_path: {},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_run(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+
+        return SimpleNamespace(
+            best_value=0.5,
+            best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
+        )
+
+    monkeypatch.setattr(
+        search_module,
+        "run_hyperparameter_optimization",
+        fake_run,
     )
     monkeypatch.setattr(
         search_module,
-        "optimize_params",
-        MagicMock(
-            return_value=SimpleNamespace(
-                best_value=0.5,
-                best_params={},
-            )
-        ),
+        "logger",
+        Mock(),
     )
 
     main()
 
-    load_dotenv.assert_not_called()
+    assert captured["n_trials"] == 7
+
+
+@pytest.mark.parametrize(
+    ("search_config", "expected"),
+    [
+        ({}, 20),
+        ({"n_trials": 8}, 8),
+    ],
+)
+def test_main_trial_count_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    search_config: dict[str, Any],
+    expected: int,
+) -> None:
+    """Use 20 trials when neither the CLI nor YAML specifies a value."""
+    args = argparse.Namespace(
+        dataset_config=tmp_path / "dataset.yaml",
+        train_config=None,
+        val_config=None,
+        test_config=None,
+        search_config=tmp_path / "search.yaml",
+        params=None,
+        model="efficientnet_b0",
+        dataset_root=tmp_path / "datasets",
+        output_dir=tmp_path / "runs",
+        dataset_length=None,
+        dataset_id=None,
+        overwrite=False,
+        n_trials=None,
+        env_file=tmp_path / ".env",
+        max_epochs=None,
+        enable_mlflow=False,
+        mlflow_timeout=5,
+        mlflow_max_retries=0,
+        signal_generators="all",
+    )
+
+    monkeypatch.setattr(search_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        search_module,
+        "load_search_config",
+        lambda path: {
+            **search_config,
+            "search_space": {},
+        },
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_config_from_yaml",
+        lambda path: FakeDatasetConfig(
+            dataset_id="dataset",
+            dataset_length=100,
+            seed=1,
+        ),
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_training_params",
+        lambda model_name, params_path: {},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_run(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+
+        return SimpleNamespace(
+            best_value=0.5,
+            best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
+        )
+
+    monkeypatch.setattr(
+        search_module,
+        "run_hyperparameter_optimization",
+        fake_run,
+    )
+    monkeypatch.setattr(
+        search_module,
+        "logger",
+        Mock(),
+    )
+
+    main()
+
+    assert captured["n_trials"] == expected
+
+
+@pytest.mark.parametrize(
+    ("enable_mlflow", "env_exists", "should_load"),
+    [
+        (True, True, True),
+        (True, False, False),
+        (False, True, False),
+    ],
+)
+def test_main_loads_dotenv_only_when_mlflow_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    enable_mlflow: bool,
+    env_exists: bool,
+    should_load: bool,
+) -> None:
+    """Load the environment file only for enabled MLflow tracking."""
+    env_file = tmp_path / ".env"
+
+    if env_exists:
+        env_file.write_text(
+            "MLFLOW_TRACKING_URI=http://example.test\n",
+            encoding="utf-8",
+        )
+
+    args = argparse.Namespace(
+        dataset_config=tmp_path / "dataset.yaml",
+        train_config=None,
+        val_config=None,
+        test_config=None,
+        search_config=tmp_path / "search.yaml",
+        params=None,
+        model="efficientnet_b0",
+        dataset_root=tmp_path / "datasets",
+        output_dir=tmp_path / "runs",
+        dataset_length=None,
+        dataset_id=None,
+        overwrite=False,
+        n_trials=1,
+        env_file=env_file,
+        max_epochs=None,
+        enable_mlflow=enable_mlflow,
+        mlflow_timeout=5,
+        mlflow_max_retries=0,
+        signal_generators="all",
+    )
+
+    load_dotenv = Mock()
+
+    monkeypatch.setattr(search_module, "parse_args", lambda: args)
+    monkeypatch.setattr(search_module, "load_dotenv", load_dotenv)
+    monkeypatch.setattr(
+        search_module,
+        "load_search_config",
+        lambda path: {
+            "search_space": {},
+        },
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_config_from_yaml",
+        lambda path: FakeDatasetConfig(
+            dataset_id="dataset",
+            dataset_length=100,
+            seed=1,
+        ),
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_training_params",
+        lambda model_name, params_path: {},
+    )
+    monkeypatch.setattr(
+        search_module,
+        "run_hyperparameter_optimization",
+        lambda **kwargs: SimpleNamespace(
+            best_value=0.5,
+            best_params={},
+            best_trial=SimpleNamespace(number=0, value=0.5, params={}),
+        ),
+    )
+    monkeypatch.setattr(
+        search_module,
+        "logger",
+        Mock(),
+    )
+
+    main()
+
+    if should_load:
+        load_dotenv.assert_called_once_with(env_file)
+    else:
+        load_dotenv.assert_not_called()
