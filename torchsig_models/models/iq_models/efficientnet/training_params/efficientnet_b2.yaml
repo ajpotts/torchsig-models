@@ -1,12 +1,16 @@
 experiment_name: iq_narrowband
 model_name: efficientnet_b2
+
 batch_size: 32
 max_epochs: 30
-learning_rate: 0.001
+learning_rate: 3.78e-4
 patience: 5
-weight_decay: 3.0e-6
+weight_decay: 7.3e-6
+
 pretrained: true
-drop_path: 0.4
-drop_rate: 0.2
+
+drop_path: 0.15
+drop_rate: 0.29
+
 num_channels: 2
-label_smoothing: 0.03
+label_smoothing: 0.042

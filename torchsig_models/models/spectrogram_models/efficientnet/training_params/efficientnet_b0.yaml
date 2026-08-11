@@ -1,0 +1,10 @@
+experiment_name: spectrogram_narrowband
+model_name: efficientnet_b0
+normalize: false
+batch_size: 32
+max_epochs: 30
+learning_rate: 0.001
+weight_decay: 3.0e-6
+drop_path: 0.4
+drop_rate: 0.2
+label_smoothing: 0.03
