@@ -170,21 +170,21 @@ def prepare_torchsig_datasets(
 
     return (
         WorkerSeedingDataLoader(
-            train_ds,
+            train_dataset,
             batch_size=batch_size,
             shuffle=True,
             seed=train_cfg.seed,
             generator=_loader_generator(train_cfg.seed),
         ),
         WorkerSeedingDataLoader(
-            val_ds,
+            val_dataset,
             batch_size=batch_size,
             shuffle=False,
             seed=val_cfg.seed,
             generator=_loader_generator(val_cfg.seed),
         ),
         WorkerSeedingDataLoader(
-            test_ds,
+            test_dataset,
             batch_size=batch_size,
             shuffle=False,
             seed=test_cfg.seed,
