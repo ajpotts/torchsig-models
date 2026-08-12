@@ -270,8 +270,6 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
         )
 
     assert (root / cfg.dataset_id).exists()
-
-
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 @patch("torchsig_models.utils.datasets.DatasetCreator")
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
