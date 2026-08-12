@@ -95,6 +95,38 @@ def test_compute_class_weights_tensor_handles_batched_labels():
     assert torch.allclose(weights, expected)
 
 
+def test_compute_class_weights_tensor_accumulates_batches_with_bincount(
+    monkeypatch,
+):
+    dataset = SimpleDataset(labels=[0, 1, 1, 2, 2])
+    loader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=False)
+    bincount = torch.bincount
+    observed_batches = []
+
+    def recording_bincount(labels, *, minlength):
+        observed_batches.append(labels.clone())
+        return bincount(labels, minlength=minlength)
+
+    monkeypatch.setattr(torch, "bincount", recording_bincount)
+
+    weights = compute_class_weights_tensor(loader, num_classes=3)
+
+    assert [batch.tolist() for batch in observed_batches] == [[0, 1], [1, 2], [2]]
+    assert torch.allclose(weights, torch.tensor([5 / 3, 5 / 6, 5 / 6]))
+
+
+@pytest.mark.parametrize("label", [-1, 3])
+def test_compute_class_weights_tensor_rejects_out_of_range_labels(label):
+    loader = torch.utils.data.DataLoader(
+        SimpleDataset(labels=[0, label]),
+        batch_size=2,
+        shuffle=False,
+    )
+
+    with pytest.raises(ValueError, match="Labels must be in the range"):
+        compute_class_weights_tensor(loader, num_classes=3)
+
+
 def test_compute_num_params_counts_only_trainable_parameters():
     model = torch.nn.Sequential(
         torch.nn.Linear(4, 3),  # 4 * 3 + 3 = 15

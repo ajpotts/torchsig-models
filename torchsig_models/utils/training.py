@@ -128,40 +128,26 @@ def compute_class_weights_tensor(
         >>> weights = compute_class_weights_tensor(train_loader, num_classes=10)
         >>> criterion = torch.nn.CrossEntropyLoss(weight=weights)
     """
-    all_labels: list[int] = []
+    class_counts = torch.zeros(num_classes, dtype=torch.long)
+    total_samples = 0
 
-    dataset = getattr(loader, "dataset", None)
+    for _, labels in loader:
+        if not isinstance(labels, torch.Tensor):
+            labels = torch.as_tensor(labels)
 
-    if dataset is not None:
-        for _, (_, label) in enumerate(dataset):
-            if isinstance(label, torch.Tensor):
-                label = label.detach().cpu().reshape(-1).tolist()[0]
-            elif isinstance(label, np.ndarray):
-                label = label.reshape(-1).tolist()[0]
-            elif isinstance(label, (list, tuple)):
-                label = label[0]
+        labels = labels.detach().to(device="cpu", dtype=torch.long).reshape(-1)
+        if labels.numel() == 0:
+            continue
+        if torch.any((labels < 0) | (labels >= num_classes)):
+            raise ValueError(
+                f"Labels must be in the range [0, {num_classes - 1}]."
+            )
 
-            all_labels.append(int(label))
-    else:
-        for batch in loader:
-            _, labels = batch
+        class_counts += torch.bincount(labels, minlength=num_classes)
+        total_samples += labels.numel()
 
-            if isinstance(labels, torch.Tensor):
-                labels = labels.detach().cpu().reshape(-1).tolist()
-            else:
-                labels = np.asarray(labels, dtype=object).reshape(-1).tolist()
-
-            for label in labels:
-                if isinstance(label, (list, tuple)):
-                    label = label[0]
-                all_labels.append(int(label))
-
-    class_counts = np.bincount(all_labels, minlength=num_classes)
-    class_counts = np.maximum(class_counts, 1)
-
-    class_weights = len(all_labels) / (num_classes * class_counts)
-
-    return torch.tensor(class_weights, dtype=torch.float32)
+    class_counts.clamp_min_(1)
+    return total_samples / (num_classes * class_counts.float())
 
 
 def compute_num_params(model: torch.nn.Module) -> int:
