@@ -1,47 +1,26 @@
-Overall, the latest commit looks good and now passes pytests locally.
-I had vem/gemma-4 do quick evaluation of utils.training, and the only recommendation we should consider is this one:
-"To improve the performance of compute_class_weights_tensor, you can replace the Python list accumulation with a running tensor count using torch.bincount. This avoids moving all labels to the CPU as Python integers and prevents the memory overhead of a potentially massive Python list.
-Here is a mock-up of how that logic would be implemented:"
-import torch
-import numpy as np
+Description
+The shared training utility saves the checkpoint with the best validation F1 score, but train_efficientnet_2d() evaluates and returns the model weights from the final training epoch. If validation performance declines near the end of training, the reported test metrics do not describe the selected checkpoint and the returned model is not the best model saved during the run.
 
-def compute_class_weights_tensor_optimized(
-    loader: torch.utils.data.DataLoader,
-    num_classes: int,
-    device: str = "cpu",
-) -> torch.Tensor:
-    """
-    Optimized version of compute_class_weights_tensor using torch.bincount.
-    """
-    # Initialize a tensor to hold counts on the target device
-    counts = torch.zeros(num_classes, dtype=torch.long, device=device)
-    total_samples = 0
+Relevant code
 
-    # Iterate through the loader in batches
-    for batch in loader:
-        # Handle different batch formats (expecting (inputs, targets))
-        _, labels = batch
-        
-        # Ensure labels are a 1D tensor on the correct device
-        if not isinstance(labels, torch.Tensor):
-            labels = torch.tensor(labels, dtype=torch.long, device=device)
-        else:
-            labels = labels.to(device).long().view(-1)
+- torchsig_models/utils/training.py
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
 
-        # Update counts using bincount
-        # minlength ensures the output tensor is at least num_classes long
-        batch_counts = torch.bincount(labels, minlength=num_classes)
-        
-        # bincount might return a tensor longer than num_classes if labels exceed num_classes-1
-        # so we slice it to exactly num_classes
-        counts += batch_counts[:num_classes]
-        total_samples += labels.numel()
+Proposed work
 
-    # Avoid division by zero for missing classes
-    counts = torch.clamp(counts, min=1)
+- Expose the best checkpoint path from the shared train_validate() workflow.
+- Restore the best validation-F1 weights after trainer.fit() completes.
+- Run test evaluation against the restored model.
+- Ensure the model returned by train_efficientnet_2d() contains the same weights as the selected checkpoint.
+- Record the selected checkpoint path in the training result metadata.
+- Preserve correct behavior when checkpointing is disabled or no checkpoint is produced.
+- Add regression tests where the final epoch differs from the best epoch.
 
-    # Compute inverse frequency weights
-    # formula: total_samples / (num_classes * class_count)
-    weights = total_samples / (num_classes * counts)
+Acceptance criteria
 
-    return weights.float().cpu()
+- Test metrics are computed using the checkpoint with the best validation F1.
+- The returned model state matches the selected best checkpoint.
+- The result dictionary includes the selected checkpoint path.
+- Training without a checkpoint directory continues to use final-epoch weights without failing.
+- Existing IQ and spectrogram training callers remain compatible.
+- Tests cover successful restoration, no-checkpoint behavior, and invalid or missing checkpoint handling.
