@@ -398,7 +398,12 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         model_factory,
     )
 
-    wrapped_model = SimpleNamespace(model=model)
+    checkpoint_path = tmp_path / "checkpoints" / "best.ckpt"
+    restored_model = torch.nn.Linear(4, 3)
+    wrapped_model = SimpleNamespace(
+        model=restored_model,
+        best_checkpoint_path=str(checkpoint_path),
+    )
     metrics_callback = SimpleNamespace(val_f1s=[0.75])
 
     train_validate = MagicMock(
@@ -523,7 +528,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     )
 
     evaluate_classifier.assert_called_once_with(
-        model=model,
+        model=restored_model,
         test_loader=test_loader,
         device=expected_device,
         num_classes=3,
@@ -533,11 +538,11 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     test_metrics.save_to_csv.assert_called_once_with(
         metrics_dir / "test"
     )
-    compute_num_params.assert_called_once_with(model)
+    compute_num_params.assert_called_once_with(restored_model)
 
     assert result == {
         "pl_model": wrapped_model,
-        "model": model,
+        "model": restored_model,
         "metrics": metrics_callback,
         "test_metrics": test_metrics,
         "train_loader": train_loader,
@@ -546,7 +551,53 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         "num_classes": 3,
         "num_params": 15,
         "data_info": data_info,
+        "best_checkpoint_path": str(checkpoint_path),
     }
+
+
+def test_train_efficientnet_2d_supports_disabled_checkpointing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Use final-epoch weights when no checkpoint directory is configured."""
+    cfg = _dataset_config()
+    model = torch.nn.Linear(2, 2)
+    wrapped_model = SimpleNamespace(model=model, best_checkpoint_path=None)
+    train_validate = MagicMock(return_value=(wrapped_model, MagicMock()))
+
+    monkeypatch.setattr(
+        training_module,
+        "prepare_torchsig_datasets",
+        MagicMock(return_value=(object(), object(), object(), {})),
+    )
+    monkeypatch.setitem(
+        training_module.MODEL_FACTORY,
+        "efficientnet_b0",
+        MagicMock(return_value=model),
+    )
+    monkeypatch.setattr(training_module, "train_validate", train_validate)
+    monkeypatch.setattr(
+        training_module,
+        "evaluate_classifier",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(training_module, "compute_num_params", MagicMock(return_value=6))
+    monkeypatch.setattr(training_module, "set_deterministic", MagicMock())
+    monkeypatch.setattr(training_module.TorchSigSignalLists, "all_signals", ["a", "b"])
+
+    result = train_efficientnet_2d(
+        train_cfg=cfg,
+        val_cfg=cfg,
+        test_cfg=cfg,
+        params=_training_params(),
+        checkpoint_dir=None,
+        metrics_dir=tmp_path / "metrics",
+        model_name="efficientnet_b0",
+    )
+
+    assert train_validate.call_args.kwargs["checkpoint_dir"] is None
+    assert result["model"] is model
+    assert result["best_checkpoint_path"] is None
 
 
 def test_train_efficientnet_2d_uses_default_optional_model_params(

@@ -256,7 +256,7 @@ def train_efficientnet_iq(
         "num_classes": num_classes,
         "num_params": compute_num_params(pl_model.model),
         "data_info": data_info,
-        "best_checkpoint_path": pl_model.best_checkpoint_path,
+        "best_checkpoint_path": getattr(pl_model, "best_checkpoint_path", None),
     }
 
 

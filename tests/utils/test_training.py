@@ -14,6 +14,7 @@ from torchsig_models.utils.training import (
     compute_num_params,
     set_deterministic,
     SignalClassifier,
+    train_validate,
     evaluate_classifier,
 )
 from torchsig_models.utils.classifier_metrics_tracker import (
@@ -192,6 +193,25 @@ def test_train_validate_without_checkpoint_keeps_final_weights():
 
     assert all(
         torch.equal(value, torch.full_like(value, 2.0))
+        for value in pl_model.model.state_dict().values()
+    )
+    assert pl_model.best_checkpoint_path is None
+
+
+def test_train_validate_without_produced_checkpoint_keeps_final_weights(tmp_path):
+    model = torch.nn.Linear(2, 2)
+
+    def fake_fit(pl_model, callbacks, **kwargs):
+        del kwargs
+        with torch.no_grad():
+            for parameter in pl_model.model.parameters():
+                parameter.fill_(3.0)
+        callbacks[-1].best_model_path = ""
+
+    pl_model, _ = _train_with_mocked_trainer(model, tmp_path, fake_fit)
+
+    assert all(
+        torch.equal(value, torch.full_like(value, 3.0))
         for value in pl_model.model.state_dict().values()
     )
     assert pl_model.best_checkpoint_path is None
