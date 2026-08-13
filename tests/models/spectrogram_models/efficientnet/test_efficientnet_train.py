@@ -459,7 +459,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         model_name="efficientnet_b0",
         signal_generators=["bpsk"],
         logger=logger,
-        accelerator="cpu",
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
     )
 
@@ -515,12 +515,12 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     assert training_call["metrics_dir"] == metrics_dir
     assert training_call["checkpoint_dir"] == checkpoint_dir
     assert training_call["logger"] is logger
-    assert training_call["accelerator"] == "cpu"
+    assert training_call["accelerator"] == (
+        "gpu" if torch.cuda.is_available() else "cpu"
+    )
     assert training_call["devices"] == 1
 
-    expected_device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    expected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     evaluate_classifier.assert_called_once_with(
         model=model,
@@ -530,9 +530,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         criterion=training_call["criterion"],
     )
 
-    test_metrics.save_to_csv.assert_called_once_with(
-        metrics_dir / "test"
-    )
+    test_metrics.save_to_csv.assert_called_once_with(metrics_dir / "test")
     compute_num_params.assert_called_once_with(model)
 
     assert result == {
@@ -712,13 +710,8 @@ def test_train_efficientnet_2d_uses_checkpoint_metrics_directory_by_default(
 
     expected_metrics_dir = checkpoint_dir / "metrics"
 
-    assert (
-        train_validate.call_args.kwargs["metrics_dir"]
-        == expected_metrics_dir
-    )
-    test_metrics.save_to_csv.assert_called_once_with(
-        expected_metrics_dir / "test"
-    )
+    assert train_validate.call_args.kwargs["metrics_dir"] == expected_metrics_dir
+    test_metrics.save_to_csv.assert_called_once_with(expected_metrics_dir / "test")
 
 
 def test_train_efficientnet_2d_builds_expected_loss_and_optimizer(
@@ -808,15 +801,9 @@ def test_train_efficientnet_2d_builds_expected_loss_and_optimizer(
         optimizer,
         torch.optim.AdamW,
     )
-    assert optimizer.param_groups[0]["initial_lr"] == pytest.approx(
-        1e-3
-    )
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(
-        1e-4
-    )
-    assert optimizer.param_groups[0]["weight_decay"] == pytest.approx(
-        1e-4
-    )
+    assert optimizer.param_groups[0]["initial_lr"] == pytest.approx(1e-3)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-4)
+    assert optimizer.param_groups[0]["weight_decay"] == pytest.approx(1e-4)
 
     assert isinstance(
         scheduler,

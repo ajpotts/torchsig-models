@@ -350,9 +350,7 @@ def test_run_hyperparameter_optimization_creates_trial_directories(
     tmp_path: Path,
 ) -> None:
     """Create one output directory for each Optuna trial."""
-    observed_calls: list[
-        tuple[dict[str, Any], Path, int]
-    ] = []
+    observed_calls: list[tuple[dict[str, Any], Path, int]] = []
 
     def train_fn(
         params: dict[str, Any],
@@ -408,6 +406,7 @@ def test_run_hyperparameter_optimization_extracts_nested_metric(
     tmp_path: Path,
 ) -> None:
     """Allow the training callback to return a metrics object."""
+
     def train_fn(
         params: dict[str, Any],
         trial_dir: Path,
@@ -461,9 +460,7 @@ def test_run_hyperparameter_optimization_validates_arguments(
     arguments: dict[str, Any] = {
         "base_params": {},
         "search_space": {},
-        "train_fn": lambda params, trial_dir, trial: {
-            "val_f1": 1.0
-        },
+        "train_fn": lambda params, trial_dir, trial: {"val_f1": 1.0},
         "output_dir": tmp_path,
         "show_progress_bar": False,
         "mlflow_enabled": False,
@@ -478,6 +475,7 @@ def test_training_errors_propagate(
     tmp_path: Path,
 ) -> None:
     """Do not suppress errors raised by the training callback."""
+
     def train_fn(
         params: dict[str, Any],
         trial_dir: Path,
@@ -517,29 +515,13 @@ def test_mlflow_http_settings_sets_and_restores_environment(
     ):
         # Existing values are preserved because the implementation uses
         # setdefault().
+        assert hyperparameter_search.os.environ["MLFLOW_HTTP_REQUEST_TIMEOUT"] == "30"
         assert (
-            hyperparameter_search.os.environ[
-                "MLFLOW_HTTP_REQUEST_TIMEOUT"
-            ]
-            == "30"
-        )
-        assert (
-            hyperparameter_search.os.environ[
-                "MLFLOW_HTTP_REQUEST_MAX_RETRIES"
-            ]
-            == "0"
+            hyperparameter_search.os.environ["MLFLOW_HTTP_REQUEST_MAX_RETRIES"] == "0"
         )
 
-    assert (
-        hyperparameter_search.os.environ[
-            "MLFLOW_HTTP_REQUEST_TIMEOUT"
-        ]
-        == "30"
-    )
-    assert (
-        "MLFLOW_HTTP_REQUEST_MAX_RETRIES"
-        not in hyperparameter_search.os.environ
-    )
+    assert hyperparameter_search.os.environ["MLFLOW_HTTP_REQUEST_TIMEOUT"] == "30"
+    assert "MLFLOW_HTTP_REQUEST_MAX_RETRIES" not in hyperparameter_search.os.environ
 
 
 def test_mlflow_logger_disables_tracking_when_package_is_missing(

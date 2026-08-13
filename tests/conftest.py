@@ -17,6 +17,7 @@ from torch.utils.data import default_collate
 
 logger = logging.getLogger(__name__)
 
+
 def pytest_addoption(parser):
     parser.addoption(
         "--test-mode",
@@ -69,12 +70,14 @@ SEED = 42
 def class_names():
     return TorchSigSignalLists.all_signals
 
+
 @pytest.fixture(scope="session")
 def narrowband_config():
     """Load narrowband config from test_narrowband_config.yaml."""
     config_path = Path(__file__).parent / "test_narrowband_config.yaml"
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
+
 
 @pytest.fixture(scope="session")
 def narrowband_data_dir():
@@ -92,12 +95,15 @@ def narrowband_data_dir():
             return False
 
         try:
-            return len(
-                StaticTorchSigDataset(
-                    root=str(data_dir),
-                    target_labels=["class_index"],
+            return (
+                len(
+                    StaticTorchSigDataset(
+                        root=str(data_dir),
+                        target_labels=["class_index"],
+                    )
                 )
-            ) == DATASET_LENGTH
+                == DATASET_LENGTH
+            )
         except (FileNotFoundError, OSError, KeyError, RuntimeError):
             return False
 

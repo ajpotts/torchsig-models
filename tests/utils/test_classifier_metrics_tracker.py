@@ -136,7 +136,9 @@ def test_classifier_metrics_tracker_plot_old_signature_single_metric(tmp_path):
     assert len(axes) == 1
 
 
-def test_classifier_metrics_tracker_plot_rejects_save_file_with_multiple_metrics(tmp_path):
+def test_classifier_metrics_tracker_plot_rejects_save_file_with_multiple_metrics(
+    tmp_path,
+):
     tracker = ClassifierMetricsTracker(n_classes=2, device="cpu")
 
     with pytest.raises(ValueError, match="save_file"):
@@ -309,6 +311,7 @@ def test_classifier_metrics_tracker_callback_save_and_plot(tmp_path):
         assert (phase_dir / "loss.png").is_file()
         assert (phase_dir / "precision.png").is_file()
         assert (phase_dir / "recall.png").is_file()
+
 
 def test_classifier_metrics_tracker_plot_confusion_matrix(tmp_path):
     tracker = ClassifierMetricsTracker(n_classes=3, device="cpu")

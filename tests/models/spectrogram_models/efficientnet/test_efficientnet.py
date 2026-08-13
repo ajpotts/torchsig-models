@@ -21,7 +21,7 @@ from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import 
 )
 def test_efficientnet_2d_forward_shape(model_factory):
     model = model_factory(
-        num_classes=57,
+        num_classes=72,
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
@@ -33,7 +33,7 @@ def test_efficientnet_2d_forward_shape(model_factory):
     with torch.no_grad():
         out = model(x)
 
-    assert out.shape == (2, 57)
+    assert out.shape == (2, 72)
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_efficientnet_2d_supports_custom_num_classes(model_factory):
 
 def test_efficientnet_2d_supports_custom_input_channels():
     model = efficientnet_b0(
-        num_classes=57,
+        num_classes=72,
         input_channels=2,
         drop_path_rate=0.0,
         drop_rate=0.0,
@@ -75,12 +75,12 @@ def test_efficientnet_2d_supports_custom_input_channels():
     with torch.no_grad():
         out = model(x)
 
-    assert out.shape == (2, 57)
+    assert out.shape == (2, 72)
 
 
 def test_efficientnet_2d_disables_normalization_by_default():
     model = efficientnet_b0(
-        num_classes=57,
+        num_classes=72,
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
@@ -93,7 +93,7 @@ def test_efficientnet_2d_disables_normalization_by_default():
 
 def test_efficientnet_2d_supports_per_sample_normalization():
     model = efficientnet_b0(
-        num_classes=57,
+        num_classes=72,
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,

@@ -68,17 +68,19 @@ def _create_static_dataset(
     overwrite: bool,
     *,
     signal_generators: str | list[str] = "all",
-) -> StaticTorchSigDataset:
+) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
 
+    iterable_dataset = TorchSigIterableDataset(
+        metadata=_dataset_metadata(cfg),
+        transforms=transforms,
+        signal_generators=signal_generators,
+    )
+
     creator = DatasetCreator(
         dataloader=WorkerSeedingDataLoader(
-            TorchSigIterableDataset(
-                metadata=_dataset_metadata(cfg),
-                transforms=transforms,
-                signal_generators=signal_generators,
-            ),
+            iterable_dataset,
             batch_size=batch_size,
             collate_fn=lambda batch: batch,
         ),
@@ -88,7 +90,7 @@ def _create_static_dataset(
     )
     creator.create()
 
-    return StaticTorchSigDataset(
+    static_dataset = StaticTorchSigDataset(
         root=str(split_root),
         target_labels=getattr(
             cfg,
@@ -96,6 +98,8 @@ def _create_static_dataset(
             ["class_index"],
         ),
     )
+
+    return static_dataset, list(iterable_dataset.class_names)
 
 
 def _loader_generator(seed: int) -> torch.Generator:
@@ -140,7 +144,7 @@ def prepare_torchsig_datasets(
     if transforms is None:
         transforms = _transforms(train_cfg)
 
-    train_dataset = _create_static_dataset(
+    train_dataset, class_names = _create_static_dataset(
         train_cfg,
         "train",
         root,
@@ -149,7 +153,8 @@ def prepare_torchsig_datasets(
         overwrite,
         signal_generators=signal_generators,
     )
-    val_dataset = _create_static_dataset(
+
+    val_dataset, _ = _create_static_dataset(
         val_cfg,
         "val",
         root,
@@ -158,7 +163,8 @@ def prepare_torchsig_datasets(
         overwrite,
         signal_generators=signal_generators,
     )
-    test_dataset = _create_static_dataset(
+
+    test_dataset, _ = _create_static_dataset(
         test_cfg,
         "test",
         root,
@@ -170,27 +176,27 @@ def prepare_torchsig_datasets(
 
     return (
         WorkerSeedingDataLoader(
-            train_ds,
+            train_dataset,
             batch_size=batch_size,
             shuffle=True,
             seed=train_cfg.seed,
             generator=_loader_generator(train_cfg.seed),
         ),
         WorkerSeedingDataLoader(
-            val_ds,
+            val_dataset,
             batch_size=batch_size,
             shuffle=False,
             seed=val_cfg.seed,
             generator=_loader_generator(val_cfg.seed),
         ),
         WorkerSeedingDataLoader(
-            test_ds,
+            test_dataset,
             batch_size=batch_size,
             shuffle=False,
             seed=test_cfg.seed,
             generator=_loader_generator(test_cfg.seed),
         ),
-        {"root": str(root)},
+        {"root": str(root), "class_names": class_names},
     )
 
 

@@ -171,9 +171,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     )
     model.load_state_dict.assert_called_once_with(
         {
-            "layer.weight": checkpoint["state_dict"][
-                "model.layer.weight"
-            ],
+            "layer.weight": checkpoint["state_dict"]["model.layer.weight"],
         },
         strict=True,
     )
@@ -245,11 +243,7 @@ def test_efficientnet_inference_loads_plain_state_dict(
     monkeypatch.setattr(
         inference_module,
         "evaluate_classifier",
-        MagicMock(
-            return_value=SimpleNamespace(
-                history={"accuracy": [0.75]}
-            )
-        ),
+        MagicMock(return_value=SimpleNamespace(history={"accuracy": [0.75]})),
     )
 
     efficientnet_inference(
@@ -307,11 +301,7 @@ def test_efficientnet_inference_uses_default_model_params(
     monkeypatch.setattr(
         inference_module,
         "evaluate_classifier",
-        MagicMock(
-            return_value=SimpleNamespace(
-                history={"accuracy": [1.0]}
-            )
-        ),
+        MagicMock(return_value=SimpleNamespace(history={"accuracy": [1.0]})),
     )
 
     efficientnet_inference(
@@ -372,9 +362,7 @@ def test_efficientnet_inference_uses_cuda_when_available(
     )
 
     evaluate_classifier = MagicMock(
-        return_value=SimpleNamespace(
-            history={"accuracy": [0.9]}
-        )
+        return_value=SimpleNamespace(history={"accuracy": [0.9]})
     )
     monkeypatch.setattr(
         inference_module,
@@ -396,10 +384,7 @@ def test_efficientnet_inference_uses_cuda_when_available(
     )
     model.to.assert_called_once_with(expected_device)
 
-    assert (
-        evaluate_classifier.call_args.kwargs["device"]
-        == expected_device
-    )
+    assert evaluate_classifier.call_args.kwargs["device"] == expected_device
 
 
 def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
@@ -447,11 +432,7 @@ def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
     monkeypatch.setattr(
         inference_module,
         "evaluate_classifier",
-        MagicMock(
-            return_value=SimpleNamespace(
-                history={"accuracy": [0.5]}
-            )
-        ),
+        MagicMock(return_value=SimpleNamespace(history={"accuracy": [0.5]})),
     )
 
     with pytest.raises(RuntimeError, match="Missing key"):
@@ -507,11 +488,7 @@ def test_efficientnet_inference_accepts_matching_checkpoint_keys(
     monkeypatch.setattr(
         inference_module,
         "evaluate_classifier",
-        MagicMock(
-            return_value=SimpleNamespace(
-                history={"accuracy": [0.5]}
-            )
-        ),
+        MagicMock(return_value=SimpleNamespace(history={"accuracy": [0.5]})),
     )
 
     efficientnet_inference(
@@ -580,9 +557,7 @@ def test_efficientnet_inference_delegates_missing_dataset_validation(
     )
 
     prepare_dataset = MagicMock(
-        side_effect=FileNotFoundError(
-            f"Dataset root not found: {missing_root}"
-        )
+        side_effect=FileNotFoundError(f"Dataset root not found: {missing_root}")
     )
     monkeypatch.setattr(
         inference_module,

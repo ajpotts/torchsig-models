@@ -90,13 +90,18 @@ def test_create_static_dataset_creates_dataset(
 ):
     cfg = DummyConfig()
     transforms = [MagicMock()]
+
+    iterable_dataset = MagicMock()
+    iterable_dataset.class_names = ["class_a", "class_b"]
+    iterable_dataset_cls.return_value = iterable_dataset
+
     creator = MagicMock()
     dataset_creator_cls.return_value = creator
 
     static_dataset = MagicMock()
     static_dataset_cls.return_value = static_dataset
 
-    result = _create_static_dataset(
+    result, class_names = _create_static_dataset(
         cfg=cfg,
         split="train",
         root=tmp_path,
@@ -125,6 +130,7 @@ def test_create_static_dataset_creates_dataset(
         target_labels=["class_index"],
     )
     assert result is static_dataset
+    assert class_names == ["class_a", "class_b"]
 
 
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
@@ -139,7 +145,20 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
     tmp_path,
 ):
     cfg = DummyConfig()
-    loaders = [MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()]
+
+    iterable_datasets = [MagicMock(), MagicMock(), MagicMock()]
+    for dataset in iterable_datasets:
+        dataset.class_names = ["class_a", "class_b"]
+    iterable_dataset_cls.side_effect = iterable_datasets
+
+    loaders = [
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    ]
     dataloader_cls.side_effect = loaders
 
     static_datasets = [MagicMock(), MagicMock(), MagicMock()]
@@ -161,7 +180,10 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
     assert train_loader is loaders[3]
     assert val_loader is loaders[4]
     assert test_loader is loaders[5]
-    assert info == {"root": str(tmp_path / cfg.dataset_id)}
+    assert info == {
+        "root": str(tmp_path / cfg.dataset_id),
+        "class_names": ["class_a", "class_b"],
+    }
 
     assert dataset_creator_cls.call_count == 3
     assert static_dataset_cls.call_count == 3
@@ -175,23 +197,40 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
     ]
 
     loader_calls = dataloader_cls.call_args_list[3:]
-    assert [call.kwargs["shuffle"] for call in loader_calls] == [True, False, False]
-    assert [call.kwargs["seed"] for call in loader_calls] == [123, 123, 123]
+    assert [call.kwargs["shuffle"] for call in loader_calls] == [
+        True,
+        False,
+        False,
+    ]
+    assert [call.kwargs["seed"] for call in loader_calls] == [
+        123,
+        123,
+        123,
+    ]
 
 
 def test_prepare_torchsig_datasets_uses_expected_samplers_and_seed(tmp_path):
     cfg = DummyConfig()
     dataset = SeedableTensorDataset(torch.arange(12))
+    class_names = ["class_a", "class_b"]
 
     with patch(
         "torchsig_models.utils.datasets._create_static_dataset",
-        return_value=dataset,
+        return_value=(dataset, class_names),
     ):
         loaders_a = prepare_torchsig_datasets(
-            cfg, cfg, cfg, dataset_root=tmp_path / "a", batch_size=3
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path / "a",
+            batch_size=3,
         )[:3]
         loaders_b = prepare_torchsig_datasets(
-            cfg, cfg, cfg, dataset_root=tmp_path / "b", batch_size=3
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path / "b",
+            batch_size=3,
         )[:3]
 
     assert isinstance(loaders_a[0].sampler, RandomSampler)
@@ -205,7 +244,10 @@ def test_prepare_torchsig_datasets_uses_expected_samplers_and_seed(tmp_path):
 
     expected_order = torch.arange(12)
     for loader in loaders_a[1:]:
-        assert torch.equal(torch.cat([batch[0] for batch in loader]), expected_order)
+        assert torch.equal(
+            torch.cat([batch[0] for batch in loader]),
+            expected_order,
+        )
 
 
 def test_prepare_torchsig_datasets_creates_root(tmp_path):

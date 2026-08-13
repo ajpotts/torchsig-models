@@ -200,13 +200,13 @@ def test_efficientnet_b0_forward_shape():
 
 
 def test_efficientnet_b0_returns_normalized_model_wrapper():
-    model = efficientnet_b0(num_classes=57)
+    model = efficientnet_b0(num_classes=72)
 
     assert isinstance(model, NormalizedModel)
 
 
 def test_efficientnet_b0_replaces_global_pool():
-    model = efficientnet_b0(num_classes=57)
+    model = efficientnet_b0(num_classes=72)
 
     assert isinstance(model.model.global_pool, FastGlobalAvgPool1d)
 
@@ -217,10 +217,10 @@ def test_efficientnet_b0_replaces_classifier_for_custom_num_classes():
     assert model.model.classifier.out_features == 13
 
 
-def test_efficientnet_b0_default_classifier_has_57_classes():
+def test_efficientnet_b0_default_classifier_has_72_classes():
     model = efficientnet_b0()
 
-    assert model.model.classifier.out_features == 57
+    assert model.model.classifier.out_features == 72
 
 
 def test_pretrained_not_implemented_yet():

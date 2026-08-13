@@ -42,7 +42,7 @@ def efficientnet1d_inference(
     params_path: str | Path | None = None,
     batch_size: int = 4,
     num_workers: int = 8,
-    num_classes: int = 57,
+    num_classes: int = 72,
     model_name: EfficientNetModelName = "efficientnet_b4",
 ) -> float:
     """Evaluate a trained EfficientNet-1D model on a static TorchSig dataset.
@@ -187,7 +187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-classes",
         type=int,
-        default=57,
+        default=72,
         help="Number of output classes.",
     )
 

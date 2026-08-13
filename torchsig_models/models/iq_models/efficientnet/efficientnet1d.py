@@ -292,7 +292,7 @@ def _create_effnet_1d(
     """Create and configure a 1D EfficientNet model."""
     model = timm.create_model(
         model_name,
-        num_classes=57,
+        num_classes=72,
         in_chans=2,
         drop_path_rate=drop_path_rate,
         drop_rate=drop_rate,
@@ -308,14 +308,14 @@ def _create_effnet_1d(
         checkpoint_path=checkpoint_path,
     )
 
-    if num_classes != 57:
+    if num_classes != 72:
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
 
     return NormalizedModel(model)
 
 
 def efficientnet_b0(
-    num_classes: int = 57,
+    num_classes: int = 72,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,
@@ -363,7 +363,7 @@ def efficientnet_b0(
 
 
 def efficientnet_b2(
-    num_classes: int = 57,
+    num_classes: int = 72,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,
@@ -411,7 +411,7 @@ def efficientnet_b2(
 
 
 def efficientnet_b4(
-    num_classes: int = 57,
+    num_classes: int = 72,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,

@@ -100,7 +100,7 @@ def _create_effnet_2d(
 
 
 def efficientnet_b0(
-    num_classes: int = 57,
+    num_classes: int = 72,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
@@ -126,7 +126,7 @@ def efficientnet_b0(
 
 
 def efficientnet_b2(
-    num_classes: int = 57,
+    num_classes: int = 72,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
@@ -152,7 +152,7 @@ def efficientnet_b2(
 
 
 def efficientnet_b4(
-    num_classes: int = 57,
+    num_classes: int = 72,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,

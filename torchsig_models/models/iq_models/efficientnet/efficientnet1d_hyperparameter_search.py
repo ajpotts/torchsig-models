@@ -9,6 +9,7 @@ from typing import Any
 import logging
 
 import optuna
+import yaml
 from dotenv import load_dotenv
 from pytorch_lightning.loggers import CSVLogger
 
@@ -202,6 +203,44 @@ def _final_metrics(result: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def _write_best_trial_summary(
+    study: optuna.Study,
+    metric_name: str,
+    base_params: dict[str, Any],
+    output_dir: Path,
+) -> tuple[Path, Path]:
+    """Write best-trial provenance and reusable training parameters."""
+    best_trial = study.best_trial
+    summary = {
+        "trial_number": best_trial.number,
+        "metric_name": metric_name,
+        "metric_value": best_trial.value,
+        "parameters": best_trial.params,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = output_dir / "best_trial.yaml"
+    summary_path.write_text(
+        yaml.safe_dump(
+            summary,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    training_params_path = output_dir / "best_training_params.yaml"
+    training_params_path.write_text(
+        yaml.safe_dump(
+            {
+                **base_params,
+                **best_trial.params,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    return summary_path, training_params_path
+
+
 def main() -> None:
     """Run EfficientNet-1D hyperparameter optimization."""
     args = parse_args()
@@ -339,12 +378,14 @@ def main() -> None:
         mlflow_max_retries=args.mlflow_max_retries,
     )
 
-    logger.info("Optimization complete.")
-    logger.info(f"Best {metric_name}: {study.best_value:.4f}")
-    logger.info("Best params:")
-
-    for key, value in study.best_params.items():
-        logger.info(f"  {key}: {value}")
+    summary_path, training_params_path = _write_best_trial_summary(
+        study,
+        metric_name,
+        base_params,
+        optimization_dir,
+    )
+    logger.info("Best-trial summary saved to %s", summary_path)
+    logger.info("Best training parameters saved to %s", training_params_path)
 
 
 if __name__ == "__main__":

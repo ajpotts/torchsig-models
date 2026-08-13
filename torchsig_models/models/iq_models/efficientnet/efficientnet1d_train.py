@@ -18,7 +18,6 @@ from pytorch_lightning.loggers import Logger
 import logging
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
-from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.iq_models.efficientnet import (
@@ -183,7 +182,7 @@ def train_efficientnet_iq(
     )
     module_logger.info("Datasets ready.")
 
-    class_list = TorchSigSignalLists.all_signals
+    class_list = data_info["class_names"]
     num_classes = len(class_list)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
