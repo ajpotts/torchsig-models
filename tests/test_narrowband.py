@@ -36,7 +36,6 @@ def test_xcit1d_trainer_creates_expected_output_structure(
         pt_dir=str(pt_dir),
         metrics_dir=str(metrics_dir),
         num_epochs=num_epochs,
-        batch_size=4,
     )
 
     # Define expected directory structure relative to base_path

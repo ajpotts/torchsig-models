@@ -37,9 +37,7 @@ class NormalizedModel(nn.Module):
             normalize: Whether to standardize each sample and channel.
         """
         super().__init__()
-        self.normalize = (
-            SpectrogramNormalization() if normalize else nn.Identity()
-        )
+        self.normalize = SpectrogramNormalization() if normalize else nn.Identity()
         self.model = model
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

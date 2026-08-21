@@ -415,9 +415,7 @@ def _resolve_config_path(
     if default_config is not None:
         return default_config
 
-    raise ValueError(
-        f"Must provide either --dataset-config or --{split}-config."
-    )
+    raise ValueError(f"Must provide either --dataset-config or --{split}-config.")
 
 
 if __name__ == "__main__":
