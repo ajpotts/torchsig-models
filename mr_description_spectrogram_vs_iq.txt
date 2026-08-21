@@ -1,0 +1,53 @@
+## Summary
+
+Adds two example notebooks that explain and experimentally compare IQ and
+spectrogram inputs for modulation recognition.
+
+The conceptual notebook illustrates the information retained by each
+representation. The training notebook then provides a paired comparison using
+the repository's EfficientNet-B0 IQ and spectrogram models on the same TorchSig
+signal examples.
+
+## Changes
+
+### `examples/spectrogram_vs_iq/iq_vs_spectrogram_modrec.ipynb`
+
+- Introduces IQ and magnitude-spectrogram representations for modulation
+  recognition.
+- Uses synthetic BPSK, QPSK, and 16-QAM signals to compare time-domain IQ,
+  constellation, and spectrogram views.
+- Demonstrates how magnitude spectrograms gain invariance to constant phase
+  rotation while discarding phase information that may distinguish modulation
+  classes.
+- Explains the STFT time-frequency resolution trade-off and compares the input
+  sizes of IQ and spectrogram representations.
+- Provides practical guidance for choosing a representation and designing a
+  fair experiment.
+
+### `examples/spectrogram_vs_iq/train_iq_vs_spectrogram_modrec.ipynb`
+
+- Generates deterministic TorchSig train, validation, and test splits once and
+  reuses the same signal identities, channel conditions, offsets, and noise
+  realizations for both representations.
+- Converts the shared IQ examples into either normalized IQ tensors or
+  normalized log-power spectrograms at loading time.
+- Trains the repository's 1-D and 2-D EfficientNet-B0 implementations with the
+  same optimizer, epoch budget, dropout settings, and checkpoint-selection
+  rule.
+- Uses `torchsig_models.utils.training` for deterministic setup, parameter
+  counts, and the shared `train_validate` workflow.
+- Restores the best validation checkpoint before evaluating each model.
+- Compares validation learning curves, paired test accuracy, row-normalized
+  confusion matrices, accuracy by SNR, parameter counts, and training time.
+- Verifies that both models are evaluated against matching test labels and SNR
+  values.
+
+## Notes
+
+- The conceptual notebook is designed to run quickly on a CPU.
+- The training notebook requires a CUDA-capable GPU and generates reusable
+  static datasets under `runs/iq_vs_spectrogram_modrec/`.
+- Default dataset sizes and epoch counts demonstrate the workflow; larger runs
+  are recommended for publication-quality conclusions.
+- The comparison controls the underlying examples and training setup, but the
+  1-D and 2-D networks do not have identical computational cost.
