@@ -1,0 +1,1 @@
+Refresh legacy implementation of DETR from old TorchSig, targeting synergies with current model EfficientNet-B0 backbone and an XCiT-Nano transformer.
