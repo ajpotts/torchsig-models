@@ -92,7 +92,10 @@ class XCiT(torch.nn.Module):
 
         Hp, Wp = x.shape[-2], x.shape[-1]
         pos_encoding = (
-            mdl.pos_embed(B, Hp, Wp).reshape(B, -1, Hp*Wp).permute(0, 2, 1).half()
+            mdl.pos_embed(B, Hp, Wp)
+            .reshape(B, -1, Hp * Wp)
+            .permute(0, 2, 1)
+            .to(device=x.device, dtype=x.dtype)
         )
         x = x.reshape(B, -1, Hp*Wp).permute(0, 2,1) + pos_encoding
         for blk in mdl.blocks:
@@ -103,10 +106,7 @@ class XCiT(torch.nn.Module):
             x = blk(x)
         x = mdl.norm(x)
         x = self.grouper(x.transpose(1, 2)[:, :, :self.num_objects])
-        x = x.squeeze()
-        if x.dim() == 2:
-            x = x.unsqueeze(0)
-        x = x.transpose(1,2)
+        x = x.transpose(1, 2)
         return x
 
 
