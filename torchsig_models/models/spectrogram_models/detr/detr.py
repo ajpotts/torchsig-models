@@ -1,14 +1,10 @@
 import os.path
 from typing import Dict
 
-import gdown
-import numpy as np
-import timm
 import torch
 from torch import nn
 
-from .modules import *
-from .utils import *
+from .modules import create_detr
 
 __all__ = [
     "detr_b0_nano",
@@ -27,6 +23,28 @@ model_urls: Dict[str, str] = {
     "detr_b2_nano_mod_family": "1Wd8QD5Eq2mbEz3hkMlAQFxWZcxZChLma",
     "detr_b4_nano_mod_family": "1ykrztgBc6c9knk1F2OirSUE_W3YbsTdB",
 }
+
+
+def _load_pretrained_weights(
+    model: nn.Module,
+    *,
+    path: str,
+    model_name: str,
+) -> None:
+    """Download a checkpoint when necessary and load it into ``model``."""
+    if not os.path.exists(path):
+        try:
+            import gdown
+        except ImportError as error:
+            raise ImportError(
+                "Loading pretrained DETR weights requires the optional "
+                "'gdown' package. Install it or provide an existing checkpoint."
+            ) from error
+
+        gdown.download(id=model_urls[model_name], output=path)
+
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model.load_state_dict(state_dict, strict=False)
 
 
 def detr_b0_nano(
@@ -65,15 +83,11 @@ def detr_b0_nano(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b0_nano"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(mdl, path=path, model_name="detr_b0_nano")
     if num_classes != 1:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
 
@@ -114,15 +128,11 @@ def detr_b2_nano(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b2_nano"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(mdl, path=path, model_name="detr_b2_nano")
     if num_classes != 1:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
 
@@ -163,15 +173,11 @@ def detr_b4_nano(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b4_nano"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(mdl, path=path, model_name="detr_b4_nano")
     if num_classes != 1:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
 
@@ -212,15 +218,13 @@ def detr_b0_nano_mod_family(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b0_nano_mod_family"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(
+            mdl, path=path, model_name="detr_b0_nano_mod_family"
+        )
     if num_classes != 6:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
 
@@ -228,7 +232,7 @@ def detr_b0_nano_mod_family(
 def detr_b2_nano_mod_family(
     pretrained: bool = False,
     path: str = "detr_b2_nano_mod_family.pt",
-    num_classes: int = 1,
+    num_classes: int = 6,
     drop_rate_backbone: float = 0.3,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
@@ -261,15 +265,13 @@ def detr_b2_nano_mod_family(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b2_nano_mod_family"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(
+            mdl, path=path, model_name="detr_b2_nano_mod_family"
+        )
     if num_classes != 6:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
 
@@ -310,14 +312,12 @@ def detr_b4_nano_mod_family(
         ds_method_transformer="chunker",
     )
     if pretrained:
-        model_exists = os.path.exists(path)
-        if not model_exists:
-            file_id = model_urls["detr_b0_nano_mod_family"]
-            dl = gdown.download(id=file_id, output=path)
-        mdl.load_state_dict(torch.load(path), strict=False)
+        _load_pretrained_weights(
+            mdl, path=path, model_name="detr_b4_nano_mod_family"
+        )
     if num_classes != 6:
         mdl.linear_class = nn.Linear(
             mdl.linear_class.in_features,  # type: ignore
-            num_classes,
+            num_classes + 1,
         )
     return mdl
