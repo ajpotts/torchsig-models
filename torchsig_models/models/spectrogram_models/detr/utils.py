@@ -1,9 +1,5 @@
-from typing import List, Optional
-
-import numpy as np
 import torch
 import torch.distributed as dist
-from torch import nn
 from torchvision.ops.boxes import box_area
 
 
@@ -128,22 +124,20 @@ def generalized_box_iou(boxes1, boxes2):
 
 def format_preds(preds):
     map_preds = []
-    for i, (det_logits, det_boxes) in enumerate(zip(preds["pred_logits"], preds["pred_boxes"])):
+    for det_logits, det_boxes in zip(preds["pred_logits"], preds["pred_boxes"]):
         boxes = []
         scores = []
         labels = []
 
         # Convert DETR output format to expected bboxes
-        num_objs = 0
         pred = {}
         pred["pred_logits"] = det_logits
         pred["pred_boxes"] = det_boxes
 
-        det_list = []
         for obj_idx in range(pred["pred_logits"].shape[0]):
             probs = pred["pred_logits"][obj_idx].softmax(-1)
-            max_prob = probs.max().cpu().detach().numpy()
-            max_class = probs.argmax().cpu().detach().numpy()
+            max_prob = probs.max().detach()
+            max_class = probs.argmax().detach()
             if max_class != (pred["pred_logits"].shape[1] - 1) and max_prob >= 0.5:
                 center_time = pred["pred_boxes"][obj_idx][0]
                 center_freq = pred["pred_boxes"][obj_idx][1]
@@ -151,19 +145,36 @@ def format_preds(preds):
                 bandwidth = pred["pred_boxes"][obj_idx][3]
 
                 # Save to box, score, label lists
-                x1 = max(0, (center_time - duration / 2) * 512)
-                y1 = max(0, (center_freq - bandwidth / 2) * 512)
-                x2 = min(512, (center_time + duration / 2) * 512)
-                y2 = min(512, (center_freq + bandwidth / 2) * 512)
+                x1 = ((center_time - duration / 2) * 512).clamp(0, 512)
+                y1 = ((center_freq - bandwidth / 2) * 512).clamp(0, 512)
+                x2 = ((center_time + duration / 2) * 512).clamp(0, 512)
+                y2 = ((center_freq + bandwidth / 2) * 512).clamp(0, 512)
 
-                boxes.append([x1, y1, x2, y2])
-                scores.extend([float(max_prob)])
-                labels.extend([int(max_class)])
+                boxes.append(torch.stack([x1, y1, x2, y2]))
+                scores.append(max_prob)
+                labels.append(max_class)
+
+        device = det_boxes.device
+        formatted_boxes = (
+            torch.stack(boxes)
+            if boxes
+            else torch.empty((0, 4), device=device, dtype=det_boxes.dtype)
+        )
+        formatted_scores = (
+            torch.stack(scores)
+            if scores
+            else torch.empty((0,), device=device, dtype=det_logits.dtype)
+        )
+        formatted_labels = (
+            torch.stack(labels).to(dtype=torch.int64)
+            if labels
+            else torch.empty((0,), device=device, dtype=torch.int64)
+        )
 
         curr_pred = dict(
-            boxes=torch.tensor(boxes).to("cuda"),
-            scores=torch.tensor(scores).to("cuda"),
-            labels=torch.IntTensor(labels).to("cuda"),
+            boxes=formatted_boxes,
+            scores=formatted_scores,
+            labels=formatted_labels,
         )
 
         map_preds.append(curr_pred)
@@ -174,10 +185,9 @@ def format_preds(preds):
 def format_targets(labels):
     map_targets = []
 
-    for i, label in enumerate(labels):
+    for label in labels:
         boxes = []
-        scores = []
-        labels = []
+        class_labels = []
 
         for label_obj_idx in range(len(label["labels"])):
             center_time = label["boxes"][label_obj_idx][0]
@@ -191,12 +201,26 @@ def format_targets(labels):
             x2 = (center_time + duration / 2) * 512
             y2 = (center_freq + bandwidth / 2) * 512
 
-            boxes.append([x1, y1, x2, y2])
-            labels.extend([int(class_idx)])
+            boxes.append(torch.stack([x1, y1, x2, y2]))
+            class_labels.append(class_idx)
+
+        device = label["boxes"].device
+        formatted_boxes = (
+            torch.stack(boxes)
+            if boxes
+            else torch.empty(
+                (0, 4), device=device, dtype=label["boxes"].dtype
+            )
+        )
+        formatted_labels = (
+            torch.stack(class_labels).to(dtype=torch.int64)
+            if class_labels
+            else torch.empty((0,), device=device, dtype=torch.int64)
+        )
 
         curr_target = dict(
-            boxes=torch.tensor(boxes).to("cuda"),
-            labels=torch.IntTensor(labels).to("cuda"),
+            boxes=formatted_boxes,
+            labels=formatted_labels,
         )
         map_targets.append(curr_target)
 
