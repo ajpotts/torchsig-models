@@ -5,6 +5,7 @@ venv/
 build/
 checkpoints/
 lightning_logs/
+*runs*
 *__pycache__*
 **__pycache__**
 **.ipynb_checkpoints**

@@ -1,0 +1,32 @@
+experiment_name: xcit_nano_optimization
+run_name: xcit_nano_search
+direction: maximize
+metric_name: val_f1
+n_trials: 20
+
+search_space:
+  learning_rate:
+    type: float
+    low: 1.0e-5
+    high: 1.0e-3
+    log: true
+  weight_decay:
+    type: float
+    low: 1.0e-7
+    high: 1.0e-4
+    log: true
+  drop_rate:
+    type: float
+    low: 0.0
+    high: 0.5
+  drop_path:
+    type: float
+    low: 0.0
+    high: 0.4
+  label_smoothing:
+    type: float
+    low: 0.0
+    high: 0.1
+  batch_size:
+    type: categorical
+    choices: [8, 16, 32]
