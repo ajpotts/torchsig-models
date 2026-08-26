@@ -296,6 +296,8 @@ def test_parse_args_uses_defaults(
     assert args.model == "efficientnet_b0"
     assert args.dataset_length is None
     assert args.dataset_id is None
+    assert args.dataset_root == Path("datasets")
+    assert args.output_dir == Path("runs")
     assert args.epochs is None
     assert args.batch_size is None
     assert args.overwrite is False
@@ -326,6 +328,10 @@ def test_parse_args_reads_overrides(
             "1000",
             "--dataset-id",
             "spectrogram_test",
+            "--dataset-root",
+            "custom-datasets",
+            "--output-dir",
+            "custom-runs",
             "--epochs",
             "12",
             "--batch-size",
@@ -348,6 +354,8 @@ def test_parse_args_reads_overrides(
     assert args.model == "efficientnet_b4"
     assert args.dataset_length == 1000
     assert args.dataset_id == "spectrogram_test"
+    assert args.dataset_root == Path("custom-datasets")
+    assert args.output_dir == Path("custom-runs")
     assert args.epochs == 12
     assert args.batch_size == 64
     assert args.overwrite is True

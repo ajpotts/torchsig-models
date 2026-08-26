@@ -355,6 +355,20 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=Path("datasets"),
+        help="Root directory for generated static datasets.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("runs"),
+        help="Root directory for checkpoints and metrics.",
+    )
+
+    parser.add_argument(
         "--epochs",
         type=int,
         help="Override maximum training epochs.",
@@ -495,7 +509,7 @@ if __name__ == "__main__":
     if args.batch_size is not None:
         params["batch_size"] = args.batch_size
 
-    run_dir = Path("runs") / train_config.dataset_id / args.model
+    run_dir = args.output_dir / train_config.dataset_id / args.model
 
     result = train_efficientnet_2d(
         train_cfg=train_config,
@@ -504,6 +518,7 @@ if __name__ == "__main__":
         params=params,
         checkpoint_dir=run_dir / "checkpoints",
         metrics_dir=run_dir / "metrics",
+        dataset_root=args.dataset_root,
         model_name=args.model,
         overwrite=args.overwrite,
         accelerator=args.accelerator,
