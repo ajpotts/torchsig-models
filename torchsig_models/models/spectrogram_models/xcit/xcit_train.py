@@ -8,6 +8,7 @@ from typing import Any
 import torch
 import yaml
 from pytorch_lightning.loggers import Logger
+from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.utils.yaml import load_config_from_yaml
 
@@ -42,9 +43,9 @@ def load_training_params(params_path: str | Path | None = None) -> dict[str, Any
 
 
 def train_xcit_2d(
-    train_cfg: Any,
-    val_cfg: Any,
-    test_cfg: Any,
+    train_cfg: TorchSigDatasetConfig,
+    val_cfg: TorchSigDatasetConfig,
+    test_cfg: TorchSigDatasetConfig,
     params: dict[str, Any],
     checkpoint_dir: str | Path,
     *,
@@ -136,30 +137,68 @@ def train_xcit_2d(
 def parse_args() -> argparse.Namespace:
     """Parse XCiT training command-line arguments."""
     parser = argparse.ArgumentParser(description="Train XCiT-Nano on TorchSig spectrograms.")
-    parser.add_argument("--dataset-config", type=Path, required=True)
+    parser.add_argument("--dataset-config", type=Path)
+    parser.add_argument("--train-config", type=Path)
+    parser.add_argument("--val-config", type=Path)
+    parser.add_argument("--test-config", type=Path)
     parser.add_argument("--params", type=Path)
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs"))
+    parser.add_argument("--dataset-length", type=int)
+    parser.add_argument("--dataset-id")
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--accelerator", default="auto", choices=["auto", "cpu", "gpu", "mps"])
-    parser.add_argument("--devices", default="auto")
+    parser.add_argument("--devices", type=_parse_devices, default="auto")
     return parser.parse_args()
+
+
+def _parse_devices(value: str) -> int | str:
+    """Parse a Lightning device count or symbolic selection."""
+    return int(value) if value.isdigit() else value
+
+
+def _resolve_config_path(
+    dataset_config: Path | None,
+    split_config: Path | None,
+    split: str,
+) -> Path:
+    """Resolve a shared or split-specific dataset configuration path."""
+    if split_config is not None:
+        return split_config
+    if dataset_config is not None:
+        return dataset_config
+    raise ValueError(f"Must provide either --dataset-config or --{split}-config.")
 
 
 def main() -> None:
     """Train XCiT-Nano from command-line configuration."""
     args = parse_args()
-    train_cfg = load_config_from_yaml(args.dataset_config)
-    val_cfg = replace(load_config_from_yaml(args.dataset_config), seed=train_cfg.seed + 1)
-    test_cfg = replace(load_config_from_yaml(args.dataset_config), seed=train_cfg.seed + 2)
+    train_path = _resolve_config_path(
+        args.dataset_config, args.train_config, "train"
+    )
+    val_path = _resolve_config_path(args.dataset_config, args.val_config, "val")
+    test_path = _resolve_config_path(args.dataset_config, args.test_config, "test")
+    train_cfg = load_config_from_yaml(train_path)
+    val_cfg = load_config_from_yaml(val_path)
+    test_cfg = load_config_from_yaml(test_path)
+    if train_path == val_path == test_path:
+        val_cfg = replace(val_cfg, seed=train_cfg.seed + 1)
+        test_cfg = replace(test_cfg, seed=train_cfg.seed + 2)
+    if args.dataset_length is not None:
+        train_cfg = replace(train_cfg, dataset_length=args.dataset_length)
+        val_cfg = replace(val_cfg, dataset_length=args.dataset_length)
+        test_cfg = replace(test_cfg, dataset_length=args.dataset_length)
+    if args.dataset_id is not None:
+        train_cfg = replace(train_cfg, dataset_id=args.dataset_id)
+        val_cfg = replace(val_cfg, dataset_id=args.dataset_id)
+        test_cfg = replace(test_cfg, dataset_id=args.dataset_id)
     params = load_training_params(args.params)
     if args.epochs is not None:
         params["max_epochs"] = args.epochs
     if args.batch_size is not None:
         params["batch_size"] = args.batch_size
-    devices = int(args.devices) if args.devices.isdigit() else args.devices
     run_dir = args.output_dir / train_cfg.dataset_id / "xcit_nano"
     train_xcit_2d(
         train_cfg,
@@ -171,7 +210,7 @@ def main() -> None:
         dataset_root=args.dataset_root,
         overwrite=args.overwrite,
         accelerator=args.accelerator,
-        devices=devices,
+        devices=args.devices,
     )
 
 
