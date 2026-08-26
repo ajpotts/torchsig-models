@@ -1,0 +1,23 @@
+## Summary
+
+Adds an XCiT-Nano model for spectrogram-based signal classification and the supporting training, inference, hyperparameter-search, and demonstration workflows.
+
+## Changes
+
+- Add `xcit_nano`, backed by timm's `xcit_nano_12_p16_224`, with configurable class and input-channel counts.
+- Support one- and two-channel spectrograms, variable spectrogram dimensions, optional input normalization, timm pretrained weights, and local PyTorch or Lightning checkpoints.
+- Add a training entry point built on the shared TorchSig dataset and training utilities.
+- Add an inference entry point for evaluating saved checkpoints on static TorchSig datasets.
+- Add Optuna hyperparameter search using the shared `torchsig_models.utils.hyperparameter_search` workflow, including a packaged default search configuration.
+- Add default XCiT-Nano training parameters and package the YAML configuration files with the distribution.
+- Add an easy classification example that generates a two-class TorchSig dataset and trains it with `train_xcit_2d`.
+- Add a hyperparameter-search demo that exercises the production XCiT search entry point.
+- Align the XCiT and EfficientNet spectrogram CLIs where appropriate, including dataset configuration, dataset/output roots, split overrides, and signal-generator arguments.
+- Document model construction and the training, inference, and search commands.
+
+## Testing
+
+- Cover model construction and forward passes for one- and two-channel inputs and multiple spectrogram dimensions.
+- Cover invalid input handling, a CPU training step, checkpoint loading, packaged configuration loading, CLI behavior, and hyperparameter-search helpers.
+- Full test suite: `179 passed, 3 skipped`.
+- Ruff and `git diff --check` pass.
