@@ -1,0 +1,62 @@
+Description
+Add an XCiT (Cross-Covariance Image Transformer) classifier for spectrogram-based signal classification.
+The implementation should follow the conventions used by the existing models in torchsig_models/models/spectrogram_models, including configuration, model construction, training, and evaluation interfaces.
+Scope
+
+
+        
+      Add a spectrogram XCiT model module.
+
+        
+      Support complex IQ input after conversion to a two-channel spectrogram representation.
+
+        
+      Make the input-channel count and number of output classes configurable.
+
+        
+      Support at least one practical XCiT variant suitable for initial experiments.
+
+        
+      Integrate the model with the existing model-loading or registry mechanism.
+
+        
+      Add a default training configuration.
+
+        
+      Add an example training invocation or update the relevant documentation.
+
+        
+      Add unit tests covering model construction and a forward pass.
+
+Acceptance criteria
+
+
+        
+      The model can be instantiated through the standard torchsig-models interface.
+
+        
+      A forward pass accepts a batch of spectrograms and returns logits with shape (batch_size, num_classes).
+
+        
+      Non-RGB spectrogram input is supported without manually duplicating channels.
+
+        
+      The model works with configurable spectrogram dimensions.
+
+        
+      Pretrained weights can be enabled when compatible weights are available; otherwise the model initializes cleanly from scratch.
+
+        
+      A CPU smoke-training run completes successfully on a small TorchSig dataset.
+
+        
+      Existing tests and linting pass.
+
+        
+      New public classes and functions include type hints and docstrings.
+
+        
+      Documentation includes the supported XCiT variant, expected input format, and an example command.
+
+Implementation notes
+A timm XCiT implementation may be wrapped if it provides the required variant and allows the input channels and classifier head to be configured. Avoid introducing a separate implementation if an existing dependency provides a suitable, maintained version. 
