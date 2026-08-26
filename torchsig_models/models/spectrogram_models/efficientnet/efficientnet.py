@@ -40,7 +40,8 @@ class NormalizedModel(nn.Module):
         self.normalize = SpectrogramNormalization() if normalize else nn.Identity()
         self.model = model
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _prepare_input(self, x: torch.Tensor) -> torch.Tensor:
+        """Validate and normalize a spectrogram batch."""
         if x.ndim == 3:
             x = x.unsqueeze(1)
         elif x.ndim != 4:
@@ -49,7 +50,19 @@ class NormalizedModel(nn.Module):
                 "or [batch, channels, frequency, time], "
                 f"got {tuple(x.shape)}."
             )
-        return self.model(self.normalize(x))
+        return self.normalize(x)
+
+    @property
+    def num_features(self) -> int:
+        """Number of channels in the model's final spatial feature map."""
+        return int(self.model.num_features)
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the final spatial feature map before classifier pooling."""
+        return self.model.forward_features(self._prepare_input(x))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(self._prepare_input(x))
 
 
 def _load_pretrained_if_requested(

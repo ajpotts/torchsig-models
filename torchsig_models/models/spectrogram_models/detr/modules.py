@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import List
 
 import timm
@@ -8,17 +9,45 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.ops import sigmoid_focal_loss
 
+from torchsig_models.models.spectrogram_models.efficientnet import (
+    efficientnet_b0,
+    efficientnet_b2,
+    efficientnet_b4,
+)
+from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import (
+    NormalizedModel,
+)
+
 from .criterion import dice_loss, nested_tensor_from_tensor_list
 from .utils import (
     accuracy,
     box_cxcywh_to_xyxy,
-    drop_classifier,
     find_output_features,
     generalized_box_iou,
     get_world_size,
     is_dist_avail_and_initialized,
     xcit_name_to_timm_name,
 )
+
+
+EFFICIENTNET_BACKBONES: dict[str, Callable[..., torch.nn.Module]] = {
+    "efficientnet_b0": efficientnet_b0,
+    "efficientnet_b2": efficientnet_b2,
+    "efficientnet_b4": efficientnet_b4,
+}
+
+
+class EfficientNetBackbone(torch.nn.Module):
+    """Expose a TorchSIG Models EfficientNet as a spatial feature extractor."""
+
+    def __init__(self, model: NormalizedModel):
+        super().__init__()
+        self.model = model
+        self.num_features = model.num_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model.forward_features(x)
+
 
 class ConvDownSampler(torch.nn.Module):
     def __init__(self, in_chans, embed_dim, ds_rate=16):
@@ -141,8 +170,11 @@ class DETRModel(torch.nn.Module):
         self.backbone = backbone
 
         # Conversion layer
+        output_features = getattr(self.backbone, "num_features", None)
+        if output_features is None:
+            output_features = find_output_features(self.backbone)
         self.conv = torch.nn.Conv2d(
-            in_channels=find_output_features(self.backbone),
+            in_channels=output_features,
             out_channels=hidden_dim,
             kernel_size=1,
         )
@@ -499,19 +531,23 @@ def create_detr(
         torch.nn.Module
 
     """
-    # build backbone
-    if "eff" in backbone:
-        backbone_arch = timm.create_model(
-            model_name=backbone,
-            in_chans=2,
-            drop_rate=drop_rate_backbone,
-            drop_path_rate=drop_path_rate_backbone,
-        )
-        backbone_arch = drop_classifier(backbone_arch)
-    else:
+    # Build the backbone through the TorchSIG Models API so its checkpoint
+    # loading remains the single source of pretrained EfficientNet weights.
+    try:
+        backbone_factory = EFFICIENTNET_BACKBONES[backbone]
+    except KeyError as error:
         raise NotImplementedError(
-            "Only EfficientNet backbones are supported right now."
-        )
+            f"Unsupported EfficientNet backbone: {backbone}"
+        ) from error
+
+    backbone_model = backbone_factory(
+        num_classes=0,
+        input_channels=2,
+        drop_rate=drop_rate_backbone,
+        drop_path_rate=drop_path_rate_backbone,
+        normalize=False,
+    )
+    backbone_arch = EfficientNetBackbone(backbone_model)
 
     # Build transformer
     if "xcit" in transformer:
