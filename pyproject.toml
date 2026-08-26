@@ -102,6 +102,10 @@ where = ["."]
     "training_params/*.yaml",
     "search_configs/*.yaml",
 ]
+"torchsig_models.models.spectrogram_models.xcit" = [
+    "training_params/*.yaml",
+    "search_configs/*.yaml",
+]
 
 [tool.setuptools.dynamic]
 # Dynamically read version from torchsig.__version__
