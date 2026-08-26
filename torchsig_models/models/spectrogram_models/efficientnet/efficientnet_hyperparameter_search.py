@@ -123,6 +123,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--signal-generators",
+        nargs="+",
         default="all",
         help="Signal generators used to create static datasets.",
     )

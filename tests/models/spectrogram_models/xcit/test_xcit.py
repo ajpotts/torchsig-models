@@ -1,11 +1,14 @@
 from pathlib import Path
+import sys
 
 import pytest
 import torch
 
 from torchsig_models.models.spectrogram_models.xcit import xcit_nano
 from torchsig_models.models.spectrogram_models.xcit.xcit_train import (
+    _resolve_config_path,
     load_training_params,
+    parse_args,
 )
 
 
@@ -73,3 +76,53 @@ def test_default_training_params_are_available() -> None:
 def test_load_training_params_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="Training parameter file not found"):
         load_training_params(tmp_path / "missing.yaml")
+
+
+def test_training_cli_matches_spectrogram_conventions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "xcit_train.py",
+            "--train-config",
+            "train.yaml",
+            "--val-config",
+            "val.yaml",
+            "--test-config",
+            "test.yaml",
+            "--dataset-root",
+            "custom-datasets",
+            "--output-dir",
+            "custom-runs",
+            "--dataset-length",
+            "100",
+            "--dataset-id",
+            "xcit-test",
+            "--devices",
+            "2",
+        ],
+    )
+
+    args = parse_args()
+
+    assert args.dataset_config is None
+    assert args.train_config == Path("train.yaml")
+    assert args.val_config == Path("val.yaml")
+    assert args.test_config == Path("test.yaml")
+    assert args.dataset_root == Path("custom-datasets")
+    assert args.output_dir == Path("custom-runs")
+    assert args.dataset_length == 100
+    assert args.dataset_id == "xcit-test"
+    assert args.devices == 2
+
+
+def test_resolve_config_path_matches_efficientnet_behavior() -> None:
+    shared = Path("shared.yaml")
+    split = Path("train.yaml")
+
+    assert _resolve_config_path(shared, split, "train") == split
+    assert _resolve_config_path(shared, None, "train") == shared
+    with pytest.raises(ValueError, match="--train-config"):
+        _resolve_config_path(None, None, "train")
