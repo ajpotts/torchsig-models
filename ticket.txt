@@ -1,0 +1,1 @@
+Efficientnet1d hard codes the number of classes.  It seems a little fragile, so we should probably investigate if there's a better way to do it.
