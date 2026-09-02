@@ -1,5 +1,6 @@
 """Train a YOLO model on provided dataset in YOLO compatiable format."""
 
+import os
 from pathlib import Path
 import torch
 from ultralytics import YOLO
@@ -27,11 +28,16 @@ def yolo_train(
         epochs: Number of epochs to train. Default 25.
     """
 
+    # Ultralytics enables deterministic PyTorch algorithms by default. CUDA
+    # matrix multiplication also requires this workspace configuration to be
+    # deterministic; it must be set before the first cuBLAS operation.
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
     model = YOLO(
         get_yolo_model(model_filepath)
     )  # get local model, download if necessary
 
-    results = model.train(
+    model.train(
         data=config,
         epochs=epochs,
         batch=32,
