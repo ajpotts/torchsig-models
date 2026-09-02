@@ -16,6 +16,9 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d import (
     _conv2d_to_conv1d,
     efficientnet_b0,
 )
+from torchsig_models.models.iq_models.efficientnet.efficientnet1d_inference import (
+    _resolve_num_classes,
+)
 
 
 def test_squeeze_excite_1d_preserves_shape():
@@ -271,3 +274,16 @@ def test_efficientnet_b0_default_classifier_has_72_classes():
 def test_pretrained_not_implemented_yet():
     with pytest.raises(NotImplementedError):
         efficientnet_b0(pretrained=True)
+
+
+def test_inference_num_classes_is_inferred_from_classifier_weights():
+    state_dict = {"model.classifier.weight": torch.ones(9, 4)}
+
+    assert _resolve_num_classes(state_dict, None) == 9
+
+
+def test_inference_num_classes_rejects_conflicting_override():
+    state_dict = {"classifier.weight": torch.ones(9, 4)}
+
+    with pytest.raises(ValueError, match="does not match"):
+        _resolve_num_classes(state_dict, 10)

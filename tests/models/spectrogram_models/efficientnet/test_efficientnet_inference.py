@@ -11,6 +11,7 @@ import torch
 
 import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference as inference_module
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference import (
+    _resolve_num_classes,
     _strip_lightning_prefix,
     efficientnet_inference,
 )
@@ -64,6 +65,19 @@ def test_strip_lightning_prefix_handles_mixed_keys() -> None:
         "weight",
         "metadata",
     }
+
+
+def test_resolve_num_classes_infers_classifier_size() -> None:
+    state_dict = {"model.classifier.weight": torch.ones(11, 4)}
+
+    assert _resolve_num_classes(state_dict, None) == 11
+
+
+def test_resolve_num_classes_rejects_conflicting_override() -> None:
+    state_dict = {"classifier.weight": torch.ones(11, 4)}
+
+    with pytest.raises(ValueError, match="does not match"):
+        _resolve_num_classes(state_dict, 12)
 
 
 # =============================================================================
@@ -249,6 +263,7 @@ def test_efficientnet_inference_loads_plain_state_dict(
     efficientnet_inference(
         root=dataset_root,
         checkpoint_path=checkpoint_path,
+        num_classes=72,
     )
 
     model.load_state_dict.assert_called_once_with(
@@ -373,6 +388,7 @@ def test_efficientnet_inference_uses_cuda_when_available(
     efficientnet_inference(
         root=dataset_root,
         checkpoint_path=checkpoint_path,
+        num_classes=72,
     )
 
     expected_device = torch.device("cuda")
@@ -439,6 +455,7 @@ def test_efficientnet_inference_rejects_checkpoint_key_mismatches(
         efficientnet_inference(
             root=dataset_root,
             checkpoint_path=checkpoint_path,
+            num_classes=72,
         )
 
     model.load_state_dict.assert_called_once_with({}, strict=True)
@@ -494,6 +511,7 @@ def test_efficientnet_inference_accepts_matching_checkpoint_keys(
     efficientnet_inference(
         root=dataset_root,
         checkpoint_path=checkpoint_path,
+        num_classes=72,
     )
 
     output = capsys.readouterr().out
@@ -572,6 +590,7 @@ def test_efficientnet_inference_delegates_missing_dataset_validation(
         efficientnet_inference(
             root=missing_root,
             checkpoint_path=checkpoint_path,
+            num_classes=72,
         )
 
     prepare_dataset.assert_called_once_with(

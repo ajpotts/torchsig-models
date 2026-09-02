@@ -1,0 +1,37 @@
+Remove fragile hard-coded EfficientNet class counts
+
+Summary
+
+This change removes internal assumptions that EfficientNet models always have
+72 output classes while preserving compatibility with the planned pretrained
+checkpoints.
+
+The 1D and 2D model builders now distinguish between the class count requested
+by a caller and the class count used to train a pretrained checkpoint. Models
+without pretrained weights are constructed directly with the requested output
+size. When pretrained weights are requested, the model is first constructed
+with the checkpoint's original classifier size so all weights can be loaded;
+the classifier is then replaced when the target task has a different number of
+classes.
+
+The checkpoint class counts are recorded explicitly per EfficientNet
+architecture instead of being embedded in model-construction conditionals.
+The existing 72-class public defaults remain available for backward
+compatibility.
+
+The 1D and 2D inference entry points now infer the number of classes from the
+checkpoint's classifier weight tensor by default. The --num-classes option is
+still supported as an explicit override. A conflicting override produces a
+clear error, and checkpoints without a uniquely identifiable classifier tensor
+require the class count to be supplied explicitly.
+
+Testing
+
+- pytest -q tests/models/iq_models/efficientnet tests/models/spectrogram_models/efficientnet
+  Result: 108 passed
+- ruff check on all changed Python files
+  Result: passed
+- ruff format --check on all changed Python files
+  Result: passed
+- git diff --check
+  Result: passed

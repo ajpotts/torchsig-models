@@ -2,6 +2,7 @@ import pytest
 import torch
 from torch import nn
 
+import torchsig_models.models.spectrogram_models.efficientnet.efficientnet as efficientnet_module
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import (
     NormalizedModel,
     SpectrogramNormalization,
@@ -152,3 +153,30 @@ def test_spectrogram_normalization_is_finite_for_single_pixel_inputs():
 def test_pretrained_raises_not_implemented():
     with pytest.raises(NotImplementedError, match="Pretrained loading"):
         efficientnet_b0(pretrained=True)
+
+
+def test_pretrained_model_loads_source_classifier_before_replacing_it(monkeypatch):
+    created_with_num_classes = []
+    loaded_with_num_classes = []
+
+    def create_model(_model_name, *, num_classes, **_kwargs):
+        created_with_num_classes.append(num_classes)
+        model = nn.Module()
+        model.classifier = nn.Linear(4, num_classes)
+        return model
+
+    def load_pretrained(*, model, **_kwargs):
+        loaded_with_num_classes.append(model.classifier.out_features)
+
+    monkeypatch.setattr(efficientnet_module.timm, "create_model", create_model)
+    monkeypatch.setattr(
+        efficientnet_module,
+        "_load_pretrained_if_requested",
+        load_pretrained,
+    )
+
+    model = efficientnet_b0(num_classes=13, pretrained=True)
+
+    assert created_with_num_classes == [72]
+    assert loaded_with_num_classes == [72]
+    assert model.model.classifier.out_features == 13

@@ -37,10 +37,12 @@ PRETRAINED_CHECKPOINTS = {
 # The planned pretrained checkpoints were trained on the 72-class dataset.
 # Build their original classifier before loading so its weights remain loadable;
 # transfer-learning callers can replace that classifier afterward.
+DEFAULT_NUM_CLASSES = 72
+
 PRETRAINED_NUM_CLASSES = {
-    "efficientnet_b0": 72,
-    "efficientnet_b2": 72,
-    "efficientnet_b4": 72,
+    "efficientnet_b0": DEFAULT_NUM_CLASSES,
+    "efficientnet_b2": DEFAULT_NUM_CLASSES,
+    "efficientnet_b4": DEFAULT_NUM_CLASSES,
 }
 
 
@@ -327,7 +329,7 @@ def _create_effnet_1d(
 
 
 def efficientnet_b0(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,
@@ -375,7 +377,7 @@ def efficientnet_b0(
 
 
 def efficientnet_b2(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,
@@ -423,7 +425,7 @@ def efficientnet_b2(
 
 
 def efficientnet_b4(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
     pretrained: bool = False,
