@@ -4,6 +4,7 @@ from torch import nn
 
 from timm.layers.norm_act import BatchNormAct2d
 
+import torchsig_models.models.iq_models.efficientnet.efficientnet1d as efficientnet1d_module
 from torchsig_models.models.iq_models.efficientnet.efficientnet1d import (
     BatchNormAct1d,
     FastGlobalAvgPool1d,
@@ -214,6 +215,50 @@ def test_efficientnet_b0_replaces_global_pool():
 def test_efficientnet_b0_replaces_classifier_for_custom_num_classes():
     model = efficientnet_b0(num_classes=13)
 
+    assert model.model.classifier.out_features == 13
+
+
+def test_custom_num_classes_is_passed_directly_to_timm(monkeypatch):
+    created_with_num_classes = []
+
+    def create_model(_model_name, *, num_classes, **_kwargs):
+        created_with_num_classes.append(num_classes)
+        model = nn.Module()
+        model.classifier = nn.Linear(4, num_classes)
+        return model
+
+    monkeypatch.setattr(efficientnet1d_module.timm, "create_model", create_model)
+
+    model = efficientnet_b0(num_classes=13)
+
+    assert created_with_num_classes == [13]
+    assert model.model.classifier.out_features == 13
+
+
+def test_pretrained_model_loads_source_classifier_before_replacing_it(monkeypatch):
+    created_with_num_classes = []
+    loaded_with_num_classes = []
+
+    def create_model(_model_name, *, num_classes, **_kwargs):
+        created_with_num_classes.append(num_classes)
+        model = nn.Module()
+        model.classifier = nn.Linear(4, num_classes)
+        return model
+
+    def load_pretrained(*, model, **_kwargs):
+        loaded_with_num_classes.append(model.classifier.out_features)
+
+    monkeypatch.setattr(efficientnet1d_module.timm, "create_model", create_model)
+    monkeypatch.setattr(
+        efficientnet1d_module,
+        "_load_pretrained_if_requested",
+        load_pretrained,
+    )
+
+    model = efficientnet_b0(num_classes=13, pretrained=True)
+
+    assert created_with_num_classes == [72]
+    assert loaded_with_num_classes == [72]
     assert model.model.classifier.out_features == 13
 
 

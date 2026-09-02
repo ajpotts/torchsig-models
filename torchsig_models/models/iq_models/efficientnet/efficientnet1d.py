@@ -34,6 +34,15 @@ PRETRAINED_CHECKPOINTS = {
     # },
 }
 
+# The planned pretrained checkpoints were trained on the 72-class dataset.
+# Build their original classifier before loading so its weights remain loadable;
+# transfer-learning callers can replace that classifier afterward.
+PRETRAINED_NUM_CLASSES = {
+    "efficientnet_b0": 72,
+    "efficientnet_b2": 72,
+    "efficientnet_b4": 72,
+}
+
 
 def normalize_iq(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     mean = x.mean(dim=(-2, -1), keepdim=True)
@@ -290,9 +299,12 @@ def _create_effnet_1d(
     checkpoint_path: str | None = None,
 ) -> nn.Module:
     """Create and configure a 1D EfficientNet model."""
+    model_num_classes = (
+        PRETRAINED_NUM_CLASSES[model_name] if pretrained else num_classes
+    )
     model = timm.create_model(
         model_name,
-        num_classes=72,
+        num_classes=model_num_classes,
         in_chans=2,
         drop_path_rate=drop_path_rate,
         drop_rate=drop_rate,
@@ -308,7 +320,7 @@ def _create_effnet_1d(
         checkpoint_path=checkpoint_path,
     )
 
-    if num_classes != 72:
+    if num_classes != model_num_classes:
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
 
     return NormalizedModel(model)
