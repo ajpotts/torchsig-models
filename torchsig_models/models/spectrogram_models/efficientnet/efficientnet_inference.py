@@ -16,6 +16,11 @@ from torchsig_models.utils.datasets import (
     prepare_torchsig_inference_dataset,
 )
 from torchsig_models.utils.training import evaluate_classifier
+from torchsig_models.utils.normalization import (
+    NormalizationMode,
+    normalization_from_state_dict,
+    resolve_checkpoint_normalization_mode,
+)
 
 
 __all__ = [
@@ -76,6 +81,7 @@ def efficientnet_inference(
     num_workers: int = 8,
     num_classes: int | None = None,
     model_name: EfficientNet2DModelName = "efficientnet_b4",
+    normalization: NormalizationMode | None = None,
 ) -> float:
     """Evaluate an EfficientNet-2D model on a static TorchSig dataset.
 
@@ -88,6 +94,8 @@ def efficientnet_inference(
         num_classes: Optional classifier output count. By default, this is
             inferred from the checkpoint classifier weights.
         model_name: EfficientNet architecture represented by the checkpoint.
+        normalization: Optional normalization override. Dataset statistics are
+            restored from new checkpoints; legacy behavior is otherwise used.
 
     Returns:
         Final test-set classification accuracy.
@@ -119,12 +127,19 @@ def efficientnet_inference(
     )
     state_dict = _strip_lightning_prefix(state_dict)
     num_classes = _resolve_num_classes(state_dict, num_classes)
+    normalization = resolve_checkpoint_normalization_mode(checkpoint, normalization)
 
+    normalization_kwargs = normalization_from_state_dict(
+        state_dict,
+        normalization,
+        legacy_mode="sample" if params.get("normalize", False) else "none",
+        eps=float(params.get("normalization_eps", 1e-6)),
+    )
     model = MODEL_FACTORY[model_name](
         num_classes=num_classes,
         drop_path_rate=params.get("drop_path", 0.2),
         drop_rate=params.get("drop_rate", 0.3),
-        normalize=params.get("normalize", False),
+        **normalization_kwargs,
     )
 
     model.load_state_dict(
@@ -203,6 +218,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Output classes. Defaults to the checkpoint classifier size.",
     )
+    parser.add_argument(
+        "--normalization",
+        choices=["dataset", "sample", "none"],
+        help="Override checkpoint normalization mode.",
+    )
 
     return parser.parse_args()
 
@@ -218,4 +238,5 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         num_classes=args.num_classes,
         model_name=args.model,
+        normalization=args.normalization,
     )

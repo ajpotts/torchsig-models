@@ -20,6 +20,7 @@ from torchsig_models.utils.classifier_metrics_tracker import (
     ClassifierMetricsTracker,
     ClassifierMetricsTrackerCallback,
 )
+from torchsig_models.utils.normalization import DatasetNormalization
 
 
 class SimpleDataset(torch.utils.data.Dataset):
@@ -157,6 +158,34 @@ def test_compute_num_params_returns_zero_when_all_parameters_frozen():
         param.requires_grad = False
 
     assert compute_num_params(model) == 0
+
+
+def test_signal_classifier_saves_dataset_normalization_metadata():
+    class NormalizedLinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.normalization_mode = "dataset"
+            self.normalize = DatasetNormalization([1.0], [2.0], eps=1e-5)
+            self.model = torch.nn.Linear(2, 2)
+
+        def forward(self, x):
+            return self.model(self.normalize(x).flatten(1))
+
+    model = NormalizedLinear()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    classifier = SignalClassifier(
+        model=model,
+        criterion=torch.nn.CrossEntropyLoss(),
+        optimizer=optimizer,
+    )
+
+    assert classifier.hparams["normalization"] == {
+        "mode": "dataset",
+        "mean": [1.0],
+        "std": [2.0],
+        "eps": pytest.approx(1e-5),
+    }
 
 
 @pytest.mark.slow_no_gpu

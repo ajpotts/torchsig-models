@@ -58,6 +58,15 @@ def _training_params() -> dict[str, float | int]:
     }
 
 
+@pytest.fixture(autouse=True)
+def _mock_dataset_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        training_module,
+        "compute_dataset_channel_stats",
+        MagicMock(return_value=(torch.tensor([2.0]), torch.tensor([4.0]))),
+    )
+
+
 # =============================================================================
 # load_training_params
 # =============================================================================
@@ -497,7 +506,8 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
-        normalize=True,
+        normalization="sample",
+        normalization_eps=1e-6,
     )
 
     train_validate.assert_called_once()
@@ -552,6 +562,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         "num_classes": 3,
         "num_params": 15,
         "data_info": data_info,
+        "normalization": {"mode": "sample", "eps": 1e-6},
     }
 
 
@@ -637,7 +648,10 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         num_classes=2,
         drop_path_rate=0.2,
         drop_rate=0.3,
-        normalize=False,
+        normalization="dataset",
+        normalization_mean=torch.tensor([2.0]),
+        normalization_std=torch.tensor([4.0]),
+        normalization_eps=1e-6,
     )
 
 
