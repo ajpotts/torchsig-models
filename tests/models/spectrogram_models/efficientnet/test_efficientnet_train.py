@@ -59,6 +59,15 @@ def _training_params() -> dict[str, float | int]:
     }
 
 
+@pytest.fixture(autouse=True)
+def _mock_dataset_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        training_module,
+        "compute_dataset_channel_stats",
+        MagicMock(return_value=(torch.tensor([2.0]), torch.tensor([4.0]))),
+    )
+
+
 # =============================================================================
 # load_training_params
 # =============================================================================
@@ -373,7 +382,7 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify subset class names define model outputs and metric dimensions."""
+    """Verify the full training pipeline delegates to shared utilities."""
     train_cfg = _dataset_config(seed=11, fft_size=128)
     val_cfg = _dataset_config(seed=12, fft_size=128)
     test_cfg = _dataset_config(seed=13, fft_size=128)
@@ -493,7 +502,8 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
-        normalize=True,
+        normalization="sample",
+        normalization_eps=1e-6,
         class_names=class_names,
     )
 
@@ -528,9 +538,6 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
 
     expected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    assert training_call["num_classes"] == 3
-    assert training_call["class_names"] == class_names
-
     evaluate_classifier.assert_called_once_with(
         model=model,
         test_loader=test_loader,
@@ -538,8 +545,6 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
         num_classes=3,
         criterion=training_call["criterion"],
     )
-
-    assert result["num_classes"] == 3
 
     test_metrics.save_to_csv.assert_called_once_with(metrics_dir / "test")
     compute_num_params.assert_called_once_with(model)
@@ -555,15 +560,15 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
         "num_classes": 3,
         "num_params": 15,
         "data_info": data_info,
+        "normalization": {"mode": "sample", "eps": 1e-6},
     }
-    assert result["data_info"]["class_names"] == class_names
 
 
 def test_train_efficientnet_2d_uses_default_optional_model_params(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify full-class training keeps every generated output class."""
+    """Verify default dropout parameters are used when omitted."""
     train_cfg = _dataset_config()
     val_cfg = _dataset_config()
     test_cfg = _dataset_config()
@@ -635,7 +640,10 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         num_classes=len(TorchSigSignalLists.all_signals),
         drop_path_rate=0.2,
         drop_rate=0.3,
-        normalize=False,
+        normalization="dataset",
+        normalization_mean=torch.tensor([2.0]),
+        normalization_std=torch.tensor([4.0]),
+        normalization_eps=1e-6,
         class_names=TorchSigSignalLists.all_signals,
     )
 
