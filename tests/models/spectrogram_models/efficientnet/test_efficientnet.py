@@ -25,6 +25,7 @@ def test_efficientnet_2d_forward_shape(model_factory):
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
+        normalization="none",
     )
     model.eval()
 
@@ -50,6 +51,7 @@ def test_efficientnet_2d_supports_custom_num_classes(model_factory):
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
+        normalization="none",
     )
     model.eval()
 
@@ -67,6 +69,7 @@ def test_efficientnet_2d_supports_custom_input_channels():
         input_channels=2,
         drop_path_rate=0.0,
         drop_rate=0.0,
+        normalization="none",
     )
     model.eval()
 
@@ -78,16 +81,18 @@ def test_efficientnet_2d_supports_custom_input_channels():
     assert out.shape == (2, 72)
 
 
-def test_efficientnet_2d_disables_normalization_by_default():
+def test_efficientnet_2d_uses_dataset_normalization_by_default():
     model = efficientnet_b0(
         num_classes=72,
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
+        normalization_mean=[0.0],
+        normalization_std=[1.0],
     )
 
     assert isinstance(model, NormalizedModel)
-    assert isinstance(model.normalize, nn.Identity)
+    assert model.normalization_mode == "dataset"
     assert isinstance(model.model, nn.Module)
 
 
@@ -111,6 +116,7 @@ def test_efficientnet_2d_accepts_torchsig_spectrogram_batches():
         input_channels=1,
         drop_path_rate=0.0,
         drop_rate=0.0,
+        normalization="none",
     ).eval()
 
     with torch.no_grad():
@@ -151,4 +157,9 @@ def test_spectrogram_normalization_is_finite_for_single_pixel_inputs():
 
 def test_pretrained_raises_not_implemented():
     with pytest.raises(NotImplementedError, match="Pretrained loading"):
-        efficientnet_b0(pretrained=True)
+        efficientnet_b0(pretrained=True, normalization="none")
+
+
+def test_efficientnet_2d_requires_default_dataset_statistics():
+    with pytest.raises(ValueError, match="requires normalization_mean"):
+        efficientnet_b0()

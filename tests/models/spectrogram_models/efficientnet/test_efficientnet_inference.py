@@ -161,7 +161,8 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.25,
-        normalize=True,
+        normalization="sample",
+        normalization_eps=1e-6,
     )
 
     torch_load.assert_called_once_with(
@@ -315,7 +316,8 @@ def test_efficientnet_inference_uses_default_model_params(
         num_classes=10,
         drop_path_rate=0.2,
         drop_rate=0.3,
-        normalize=False,
+        normalization="none",
+        normalization_eps=1e-6,
     )
 
 

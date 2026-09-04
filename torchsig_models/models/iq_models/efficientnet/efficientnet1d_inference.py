@@ -23,6 +23,11 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
     load_training_params,
 )
 from torchsig_models.utils.training import evaluate_classifier, configure_determinism
+from torchsig_models.utils.normalization import (
+    NormalizationMode,
+    normalization_from_state_dict,
+    resolve_checkpoint_normalization_mode,
+)
 
 
 def _strip_lightning_prefix(
@@ -44,6 +49,7 @@ def efficientnet1d_inference(
     num_workers: int = 8,
     num_classes: int = 72,
     model_name: EfficientNetModelName = "efficientnet_b4",
+    normalization: NormalizationMode | None = None,
 ) -> float:
     """Evaluate a trained EfficientNet-1D model on a static TorchSig dataset.
 
@@ -62,6 +68,9 @@ def efficientnet1d_inference(
         num_workers: Number of data loader worker processes.
         num_classes: Number of output classes for the classifier.
         model_name: EfficientNet architecture to instantiate.
+        normalization: Optional normalization override. Dataset statistics are
+            restored from new checkpoints; legacy checkpoints default to
+            per-sample normalization.
 
     Returns:
         Classification accuracy on the evaluation dataset.
@@ -80,18 +89,26 @@ def efficientnet1d_inference(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = MODEL_FACTORY[model_name](
-        num_classes=num_classes,
-        drop_path_rate=params.get("drop_path", 0.2),
-        drop_rate=params.get("drop_rate", 0.3),
-    )
-
     seed_everything(seed, workers=True)
     configure_determinism()
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
     state_dict = checkpoint.get("state_dict", checkpoint)
     state_dict = _strip_lightning_prefix(state_dict)
+    normalization = resolve_checkpoint_normalization_mode(checkpoint, normalization)
+
+    normalization_kwargs = normalization_from_state_dict(
+        state_dict,
+        normalization,
+        legacy_mode="sample",
+        eps=float(params.get("normalization_eps", 1e-6)),
+    )
+    model = MODEL_FACTORY[model_name](
+        num_classes=num_classes,
+        drop_path_rate=params.get("drop_path", 0.2),
+        drop_rate=params.get("drop_rate", 0.3),
+        **normalization_kwargs,
+    )
 
     missing_keys, unexpected_keys = model.load_state_dict(
         state_dict,
@@ -191,6 +208,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of output classes.",
     )
 
+    parser.add_argument(
+        "--normalization",
+        choices=["dataset", "sample", "none"],
+        help="Override checkpoint normalization mode.",
+    )
+
     return parser.parse_args()
 
 
@@ -205,4 +228,5 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         num_classes=args.num_classes,
         model_name=args.model,
+        normalization=args.normalization,
     )

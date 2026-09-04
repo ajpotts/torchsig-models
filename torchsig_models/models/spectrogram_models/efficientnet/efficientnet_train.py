@@ -27,6 +27,10 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
     efficientnet_b4,
 )
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.normalization import (
+    compute_dataset_channel_stats,
+    resolve_normalization_mode,
+)
 from torchsig_models.utils.training import (
     compute_num_params,
     evaluate_classifier,
@@ -228,11 +232,37 @@ def train_efficientnet_2d(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    requested_normalization = params.get("normalization")
+    legacy_normalize = params.get("normalize")
+    normalization_mode = resolve_normalization_mode(
+        requested_normalization,
+        legacy_normalize,
+    )
+    normalization_kwargs: dict[str, Any] = {
+        "normalization": normalization_mode,
+        "normalization_eps": float(params.get("normalization_eps", 1e-6)),
+    }
+    normalization_metadata: dict[str, Any] = {"mode": normalization_mode}
+    if normalization_mode == "dataset":
+        normalization_mean, normalization_std = compute_dataset_channel_stats(
+            train_loader,
+            add_channel_dim=True,
+        )
+        normalization_kwargs.update(
+            normalization_mean=normalization_mean,
+            normalization_std=normalization_std,
+        )
+        normalization_metadata.update(
+            mean=normalization_mean.tolist(),
+            std=normalization_std.tolist(),
+        )
+    normalization_metadata["eps"] = normalization_kwargs["normalization_eps"]
+
     model = MODEL_FACTORY[model_name](
         num_classes=num_classes,
         drop_path_rate=params.get("drop_path", 0.2),
         drop_rate=params.get("drop_rate", 0.3),
-        normalize=params.get("normalize", False),
+        **normalization_kwargs,
     )
 
     criterion = torch.nn.CrossEntropyLoss(
@@ -286,6 +316,7 @@ def train_efficientnet_2d(
         "num_classes": num_classes,
         "num_params": compute_num_params(pl_model.model),
         "data_info": data_info,
+        "normalization": normalization_metadata,
     }
 
 

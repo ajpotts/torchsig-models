@@ -241,6 +241,16 @@ class SignalClassifier(pl.LightningModule):
         self.scheduler = scheduler
         self.clamp_logits = clamp_logits
 
+        normalization_mode = getattr(model, "normalization_mode", None)
+        if normalization_mode is not None:
+            normalization_metadata: dict[str, object] = {"mode": normalization_mode}
+            normalization_module = getattr(model, "normalize", None)
+            if hasattr(normalization_module, "mean"):
+                normalization_metadata["mean"] = normalization_module.mean.tolist()
+                normalization_metadata["std"] = normalization_module.std.tolist()
+                normalization_metadata["eps"] = float(normalization_module.eps.item())
+            self.hparams["normalization"] = normalization_metadata
+
     # pylint: disable=arguments-differ
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run a forward pass through the wrapped model.

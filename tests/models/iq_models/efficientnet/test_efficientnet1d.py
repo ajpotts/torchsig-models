@@ -188,7 +188,7 @@ def test_conv2d_to_conv1d_ds_rate_not_2_adjusts_non_pointwise_layers():
 
 
 def test_efficientnet_b0_forward_shape():
-    model = efficientnet_b0(num_classes=10)
+    model = efficientnet_b0(num_classes=10, normalization="sample")
     model.eval()
 
     x = torch.randn(2, 2, 1024)
@@ -200,29 +200,43 @@ def test_efficientnet_b0_forward_shape():
 
 
 def test_efficientnet_b0_returns_normalized_model_wrapper():
-    model = efficientnet_b0(num_classes=72)
+    model = efficientnet_b0(num_classes=72, normalization="sample")
 
     assert isinstance(model, NormalizedModel)
 
 
 def test_efficientnet_b0_replaces_global_pool():
-    model = efficientnet_b0(num_classes=72)
+    model = efficientnet_b0(num_classes=72, normalization="sample")
 
     assert isinstance(model.model.global_pool, FastGlobalAvgPool1d)
 
 
 def test_efficientnet_b0_replaces_classifier_for_custom_num_classes():
-    model = efficientnet_b0(num_classes=13)
+    model = efficientnet_b0(num_classes=13, normalization="sample")
 
     assert model.model.classifier.out_features == 13
 
 
 def test_efficientnet_b0_default_classifier_has_72_classes():
-    model = efficientnet_b0()
+    model = efficientnet_b0(normalization="sample")
 
     assert model.model.classifier.out_features == 72
 
 
 def test_pretrained_not_implemented_yet():
     with pytest.raises(NotImplementedError):
-        efficientnet_b0(pretrained=True)
+        efficientnet_b0(pretrained=True, normalization="sample")
+
+
+def test_efficientnet_b0_defaults_to_dataset_normalization():
+    model = efficientnet_b0(
+        normalization_mean=[0.0, 0.0],
+        normalization_std=[1.0, 1.0],
+    )
+
+    assert model.normalization_mode == "dataset"
+
+
+def test_efficientnet_b0_requires_default_dataset_statistics():
+    with pytest.raises(ValueError, match="requires normalization_mean"):
+        efficientnet_b0()

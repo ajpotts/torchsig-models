@@ -10,6 +10,12 @@ from torch import nn
 from timm.layers.norm_act import BatchNormAct2d
 from timm.models._efficientnet_blocks import SqueezeExcite as TimmSqueezeExcite
 
+from torchsig_models.utils.normalization import (
+    DatasetNormalization,
+    NormalizationMode,
+    resolve_normalization_mode,
+)
+
 __all__ = [
     "efficientnet_b0",
     "efficientnet_b2",
@@ -271,9 +277,38 @@ class IQNormalization(nn.Module):
 
 
 class NormalizedModel(nn.Module):
-    def __init__(self, model):
+    """Wrap an IQ model with configurable input normalization."""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        normalization: NormalizationMode | None = None,
+        normalization_mean: torch.Tensor | list[float] | None = None,
+        normalization_std: torch.Tensor | list[float] | None = None,
+        normalization_eps: float = 1e-6,
+        normalize: bool | None = None,
+    ) -> None:
         super().__init__()
-        self.normalize = IQNormalization()
+        self.normalization_mode = resolve_normalization_mode(normalization, normalize)
+        if self.normalization_mode == "dataset":
+            if normalization_mean is None or normalization_std is None:
+                raise ValueError(
+                    "Dataset normalization requires normalization_mean and "
+                    "normalization_std."
+                )
+            self.normalize = DatasetNormalization(
+                normalization_mean,
+                normalization_std,
+                eps=normalization_eps,
+            )
+        elif self.normalization_mode == "sample":
+            self.normalize = IQNormalization(eps=normalization_eps)
+        elif self.normalization_mode == "none":
+            self.normalize = nn.Identity()
+        else:
+            raise ValueError(
+                f"Unsupported normalization mode: {self.normalization_mode}"
+            )
         self.model = model
 
     def forward(self, x):
@@ -288,6 +323,11 @@ def _create_effnet_1d(
     ds_rate: int = 2,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalization: NormalizationMode | None = None,
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ) -> nn.Module:
     """Create and configure a 1D EfficientNet model."""
     model = timm.create_model(
@@ -311,7 +351,14 @@ def _create_effnet_1d(
     if num_classes != 72:
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
 
-    return NormalizedModel(model)
+    return NormalizedModel(
+        model,
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
+    )
 
 
 def efficientnet_b0(
@@ -320,6 +367,11 @@ def efficientnet_b0(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalization: NormalizationMode | None = None,
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Construct a 1D EfficientNet-B0 model for IQ signal classification.
 
@@ -348,6 +400,17 @@ def efficientnet_b0(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        normalization:
+            Normalization mode; defaults to training-dataset normalization.
+        normalization_mean:
+            Training-dataset channel means for dataset mode.
+        normalization_std:
+            Training-dataset channel standard deviations.
+        normalization_eps:
+            Numerical stability constant.
+        normalize:
+            Deprecated boolean alias for sample/none mode.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B0 model.
@@ -359,6 +422,11 @@ def efficientnet_b0(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
 
 
@@ -368,6 +436,11 @@ def efficientnet_b2(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalization: NormalizationMode | None = None,
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Construct a 1D EfficientNet-B2 model for IQ signal classification.
 
@@ -396,6 +469,17 @@ def efficientnet_b2(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        normalization:
+            Normalization mode; defaults to training-dataset normalization.
+        normalization_mean:
+            Training-dataset channel means for dataset mode.
+        normalization_std:
+            Training-dataset channel standard deviations.
+        normalization_eps:
+            Numerical stability constant.
+        normalize:
+            Deprecated boolean alias for sample/none mode.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B2 model.
@@ -407,6 +491,11 @@ def efficientnet_b2(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
 
 
@@ -416,6 +505,11 @@ def efficientnet_b4(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    normalization: NormalizationMode | None = None,
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Construct a 1D EfficientNet-B4 model for IQ signal classification.
 
@@ -444,6 +538,17 @@ def efficientnet_b4(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        normalization:
+            Normalization mode; defaults to training-dataset normalization.
+        normalization_mean:
+            Training-dataset channel means for dataset mode.
+        normalization_std:
+            Training-dataset channel standard deviations.
+        normalization_eps:
+            Numerical stability constant.
+        normalize:
+            Deprecated boolean alias for sample/none mode.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B4 model.
@@ -455,4 +560,9 @@ def efficientnet_b4(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )

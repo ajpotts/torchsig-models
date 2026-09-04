@@ -1,5 +1,7 @@
 experiment_name: iq_narrowband
 model_name: efficientnet_b2
+normalization: dataset
+normalization_eps: 1.0e-6
 
 batch_size: 32
 max_epochs: 30
