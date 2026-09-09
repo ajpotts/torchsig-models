@@ -13,6 +13,15 @@ __all__ = [
 ]
 
 
+DEFAULT_NUM_CLASSES = 72
+
+PRETRAINED_NUM_CLASSES = {
+    "efficientnet_b0": DEFAULT_NUM_CLASSES,
+    "efficientnet_b2": DEFAULT_NUM_CLASSES,
+    "efficientnet_b4": DEFAULT_NUM_CLASSES,
+}
+
+
 class SpectrogramNormalization(nn.Module):
     """Normalize spectrogram inputs per example and channel."""
 
@@ -81,9 +90,12 @@ def _create_effnet_2d(
     normalize: bool = False,
 ) -> nn.Module:
     """Create and configure a 2D EfficientNet model."""
+    model_num_classes = (
+        PRETRAINED_NUM_CLASSES[model_name] if pretrained else num_classes
+    )
     model = timm.create_model(
         model_name,
-        num_classes=num_classes,
+        num_classes=model_num_classes,
         in_chans=input_channels,
         drop_path_rate=drop_path_rate,
         drop_rate=drop_rate,
@@ -96,11 +108,14 @@ def _create_effnet_2d(
         checkpoint_path=checkpoint_path,
     )
 
+    if num_classes != model_num_classes:
+        model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+
     return NormalizedModel(model, normalize=normalize)
 
 
 def efficientnet_b0(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
@@ -126,7 +141,7 @@ def efficientnet_b0(
 
 
 def efficientnet_b2(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,
@@ -152,7 +167,7 @@ def efficientnet_b2(
 
 
 def efficientnet_b4(
-    num_classes: int = 72,
+    num_classes: int = DEFAULT_NUM_CLASSES,
     input_channels: int = 1,
     drop_path_rate: float = 0.2,
     drop_rate: float = 0.3,

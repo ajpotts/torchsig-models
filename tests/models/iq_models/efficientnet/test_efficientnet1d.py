@@ -4,6 +4,7 @@ from torch import nn
 
 from timm.layers.norm_act import BatchNormAct2d
 
+import torchsig_models.models.iq_models.efficientnet.efficientnet1d as efficientnet1d_module
 from torchsig_models.models.iq_models.efficientnet.efficientnet1d import (
     BatchNormAct1d,
     FastGlobalAvgPool1d,
@@ -14,6 +15,9 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d import (
     _batch_norm_2d_to_1d,
     _conv2d_to_conv1d,
     efficientnet_b0,
+)
+from torchsig_models.models.iq_models.efficientnet.efficientnet1d_inference import (
+    _resolve_num_classes,
 )
 
 
@@ -217,6 +221,50 @@ def test_efficientnet_b0_replaces_classifier_for_custom_num_classes():
     assert model.model.classifier.out_features == 13
 
 
+def test_custom_num_classes_is_passed_directly_to_timm(monkeypatch):
+    created_with_num_classes = []
+
+    def create_model(_model_name, *, num_classes, **_kwargs):
+        created_with_num_classes.append(num_classes)
+        model = nn.Module()
+        model.classifier = nn.Linear(4, num_classes)
+        return model
+
+    monkeypatch.setattr(efficientnet1d_module.timm, "create_model", create_model)
+
+    model = efficientnet_b0(num_classes=13)
+
+    assert created_with_num_classes == [13]
+    assert model.model.classifier.out_features == 13
+
+
+def test_pretrained_model_loads_source_classifier_before_replacing_it(monkeypatch):
+    created_with_num_classes = []
+    loaded_with_num_classes = []
+
+    def create_model(_model_name, *, num_classes, **_kwargs):
+        created_with_num_classes.append(num_classes)
+        model = nn.Module()
+        model.classifier = nn.Linear(4, num_classes)
+        return model
+
+    def load_pretrained(*, model, **_kwargs):
+        loaded_with_num_classes.append(model.classifier.out_features)
+
+    monkeypatch.setattr(efficientnet1d_module.timm, "create_model", create_model)
+    monkeypatch.setattr(
+        efficientnet1d_module,
+        "_load_pretrained_if_requested",
+        load_pretrained,
+    )
+
+    model = efficientnet_b0(num_classes=13, pretrained=True)
+
+    assert created_with_num_classes == [72]
+    assert loaded_with_num_classes == [72]
+    assert model.model.classifier.out_features == 13
+
+
 def test_efficientnet_b0_default_classifier_has_72_classes():
     model = efficientnet_b0()
 
@@ -226,3 +274,16 @@ def test_efficientnet_b0_default_classifier_has_72_classes():
 def test_pretrained_not_implemented_yet():
     with pytest.raises(NotImplementedError):
         efficientnet_b0(pretrained=True)
+
+
+def test_inference_num_classes_is_inferred_from_classifier_weights():
+    state_dict = {"model.classifier.weight": torch.ones(9, 4)}
+
+    assert _resolve_num_classes(state_dict, None) == 9
+
+
+def test_inference_num_classes_rejects_conflicting_override():
+    state_dict = {"classifier.weight": torch.ones(9, 4)}
+
+    with pytest.raises(ValueError, match="does not match"):
+        _resolve_num_classes(state_dict, 10)

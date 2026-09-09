@@ -35,6 +35,31 @@ def _strip_lightning_prefix(
     return {key.removeprefix("model."): value for key, value in state_dict.items()}
 
 
+def _resolve_num_classes(
+    state_dict: dict[str, torch.Tensor],
+    num_classes: int | None,
+) -> int:
+    """Resolve and validate the class count against checkpoint weights."""
+    classifier_weights = [
+        value for key, value in state_dict.items() if key.endswith("classifier.weight")
+    ]
+    if len(classifier_weights) != 1:
+        if num_classes is None:
+            raise ValueError(
+                "Could not infer num_classes from a unique classifier.weight "
+                "checkpoint tensor; pass num_classes explicitly."
+            )
+        return num_classes
+
+    checkpoint_num_classes = int(classifier_weights[0].shape[0])
+    if num_classes is not None and num_classes != checkpoint_num_classes:
+        raise ValueError(
+            f"num_classes={num_classes} does not match the checkpoint classifier "
+            f"size ({checkpoint_num_classes})."
+        )
+    return checkpoint_num_classes
+
+
 def efficientnet1d_inference(
     root: str | Path,
     checkpoint_path: str | Path,
@@ -42,7 +67,7 @@ def efficientnet1d_inference(
     params_path: str | Path | None = None,
     batch_size: int = 4,
     num_workers: int = 8,
-    num_classes: int = 72,
+    num_classes: int | None = None,
     model_name: EfficientNetModelName = "efficientnet_b4",
 ) -> float:
     """Evaluate a trained EfficientNet-1D model on a static TorchSig dataset.
@@ -60,7 +85,8 @@ def efficientnet1d_inference(
             omitted, the default parameter file for the selected model is used.
         batch_size: Number of samples per evaluation batch.
         num_workers: Number of data loader worker processes.
-        num_classes: Number of output classes for the classifier.
+        num_classes: Optional output class count. By default, this is inferred
+            from the checkpoint classifier weights.
         model_name: EfficientNet architecture to instantiate.
 
     Returns:
@@ -80,6 +106,11 @@ def efficientnet1d_inference(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    state_dict = _strip_lightning_prefix(state_dict)
+    num_classes = _resolve_num_classes(state_dict, num_classes)
+
     model = MODEL_FACTORY[model_name](
         num_classes=num_classes,
         drop_path_rate=params.get("drop_path", 0.2),
@@ -88,10 +119,6 @@ def efficientnet1d_inference(
 
     seed_everything(seed, workers=True)
     configure_determinism()
-
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    state_dict = checkpoint.get("state_dict", checkpoint)
-    state_dict = _strip_lightning_prefix(state_dict)
 
     missing_keys, unexpected_keys = model.load_state_dict(
         state_dict,
@@ -187,8 +214,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-classes",
         type=int,
-        default=72,
-        help="Number of output classes.",
+        help="Output classes. Defaults to the checkpoint classifier size.",
     )
 
     return parser.parse_args()
