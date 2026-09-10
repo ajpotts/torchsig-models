@@ -1,6 +1,5 @@
 matplotlib
 numpy
-scipy
 torch
-torchsig==2.1.0
+torchsig>=2.1.1,<2.2
 git+https://github.com/TorchDSP/torchsig-models.git@v1.0.0

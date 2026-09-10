@@ -6,7 +6,16 @@ official TorchSig Models v1.0.0 narrowband XCiT checkpoint to classify them and
 join the first letter of each prediction.
 
 Open `solve_challenge.ipynb` from the repository root or this directory. The
-notebook downloads the released checkpoint on first use.
+notebook downloads the released checkpoint on first use. Install its compatible
+TorchSig 2.1 and TorchSig Models v1.0.0 environment with:
+
+```bash
+python -m pip install -r examples/ctf_xcit_sigmf/requirements.txt
+```
+
+TorchSig 2.1.1 or newer is required because that is the minimum version declared
+by TorchSig Models v1.0.0. The upper bound keeps the challenge on the TorchSig 2.1
+API and signal-class vocabulary used by the checkpoint.
 
 Challenge maintainers can reproduce the captures in a GNU Radio Python
 environment containing TorchSig 2.1.x:
