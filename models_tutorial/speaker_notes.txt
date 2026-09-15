@@ -1,0 +1,124 @@
+TorchSig Models v1.0 — 10-minute speaker notes
+================================================
+
+0:00–0:40 — What this tutorial covers
+
+TorchSig generates labeled RF examples; TorchSig Models supplies model
+architectures and reusable training and evaluation helpers. IQ is a complex
+time series: every sample has in-phase and quadrature components, which
+together preserve amplitude and phase. A spectrogram divides that stream into
+short windows and shows where energy occurs in time and frequency, so it
+remains a useful diagnostic plot. In v1.0.0, however, both the included
+EfficientNet example and XCiT operate directly on two-channel IQ. Today the
+point is the workflow, not an architecture contest. The notebook is meant to
+be pre-executed, so explain the outputs without waiting for generation or
+training.
+
+0:40–2:15 — Describe the data
+
+A TorchSigDatasetConfig is the experiment contract: number of examples, seed,
+representation, signal count, SNR, bandwidth, and target. Start from
+TorchSigDefaults, copy it, then override only the distribution you intend to
+study. Here every example contains one signal because cross-entropy
+classification expects one class index. We choose tone and lfm-radar:
+deliberately distinct classes that make a quick pipeline check more useful
+than random tensors. The signal duration nearly fills the 4,096-sample
+capture; center frequency and bandwidth still vary so the model cannot
+memorize one fixed location. High SNR and no impairments keep this tutorial
+fast. Separate split seeds generate independent examples and prevent leakage.
+output_representation="iq" tells the released data helper to apply
+ComplexTo2D, producing [2, samples] arrays for the 1-D model. Larger, noisier,
+more diverse datasets are more realistic—and much more expensive.
+
+2:15–5:10 — Generate, train, and evaluate
+
+train_efficientnet_iq is the useful high-level seam included in v1.0.0.
+Follow its arguments from left to right: three dataset contracts; a small,
+explicit hyperparameter dictionary; and separate homes for checkpoints,
+metrics, and generated examples. Internally it materializes reproducible
+static splits, applies TorchSig's ComplexTo2D, builds the repository's 1-D
+EfficientNet-B0, trains with cross-entropy, AdamW, and a warmup/cosine
+schedule, saves the best validation-F1 checkpoint, and evaluates the held-out
+test split.
+
+Static data are valuable because every epoch sees the same examples and a
+later run can reproduce evaluation. overwrite=False reuses those files;
+switch it on only when you intentionally change the data distribution.
+Validation data help select hyperparameters and checkpoints. Test data answer
+the final question after choices are frozen; repeatedly tuning against test
+accuracy turns the test set into another validation set. The return dictionary
+exposes the ordinary PyTorch model, Lightning wrapper, loaders, metric
+trackers, parameter count, and generated-data location, so the convenient API
+does not hide the experiment. The eight epochs and tiny splits are a smoke
+test.
+
+5:10–6:15 — Read the evaluation
+
+Accuracy is a starting point: it answers how many examples were right, but not
+which signals failed or whether a majority class dominates. The returned
+ClassifierMetricsTracker also records precision, recall, F1, and confusion
+matrices, while CSV artifacts land under metrics/. A confusion matrix makes
+systematic substitutions visible—for example, confusing related PSK orders.
+Compare against chance and class-frequency baselines, inspect per-class
+recall, and stratify by SNR; a model that looks strong overall may collapse
+below zero dB.
+
+The explicit evaluate_classifier call shows that evaluation is reusable
+outside training. It puts the model in evaluation mode, disables gradient
+work, walks the test loader, and returns the same tracker shape. A high score
+on clean synthetic signals does not establish performance on recordings:
+sample rate, capture length, frontend filtering, normalization, class order,
+and channel conditions must match. Synthetic-to-real validation is a required
+experiment, not a deployment detail.
+
+6:15–7:15 — Inference and checkpoints
+
+Production inference is three operations: reproduce preprocessing, restore
+weights into the same architecture, then convert logits to probabilities and
+class indices. The v1.0 efficientnet1d_inference helper evaluates a static
+two-channel IQ dataset from either a Lightning .ckpt or plain PyTorch state
+dictionary. It rebuilds the requested 1-D EfficientNet variant using a
+training-parameter YAML. The v1.0 tag does not package default parameter YAML
+files, so this notebook writes the small parameter dictionary beside the run
+and passes it explicitly.
+
+A successful weight load is also an architecture check. The returned scalar
+is dataset accuracy; for unlabeled operational data, use the same forward pass
+and retain predicted index, confidence, and relevant metadata. Softmax
+confidence is not automatically calibrated probability. Keep the ordered
+class-name list and preprocessing configuration beside the checkpoint—an
+integer prediction has no meaning without them.
+
+7:15–9:25 — The challenge bridge
+
+solve_challenge.ipynb changes the input and model, but not the inference
+pattern. SigMF stores raw complex samples in .sigmf-data and capture facts
+such as sample rate in .sigmf-meta. StaticTorchSigDataset with SigMFReader lets
+TorchSig treat those files like other datasets. Sorting the metadata paths
+establishes capture order; the dataloader must keep shuffle=False.
+
+XCiT does not accept NumPy complex values directly. It expects
+[batch, 2, samples], so ComplexTo2D—or the equivalent stack in the
+notebook—places real I and imaginary Q in two float channels. The 1-D
+EfficientNet uses the same channel-first IQ convention. load_from_checkpoint
+reconstructs the Lightning XCiT from saved hyperparameters and weights. Move
+model and tensor to the same device, call eval() so dropout and normalization
+behave deterministically, and use torch.inference_mode() to avoid gradient
+overhead.
+
+The model returns logits. Softmax makes them easy to display, while argmax
+selects the same class with or without softmax. Map that integer through the
+checkpoint's exact ordered vocabulary. The released model has 57 outputs in
+the TorchSig 2.1.1 registry order; a newer TorchSig release may contain a
+different order, so importing today's registry can silently attach the wrong
+name to a correct index. Finally preserve capture order and concatenate each
+predicted name's first character.
+
+9:25–10:00 — Takeaway
+
+The reusable recipe is: define the signal distribution and disjoint splits;
+let TorchSig materialize deterministic data; train through the TorchSig Models
+API; evaluate beyond aggregate accuracy; and deploy with identical
+preprocessing, architecture, and label order. For the challenge, that same
+recipe collapses to sorted SigMF captures, two-channel IQ, the released XCiT
+checkpoint, historical labels, and first letters.
