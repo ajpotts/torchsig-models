@@ -1,0 +1,6 @@
+# Notebook runtime. torchsig-models v1.0.0 is installed directly from GitHub
+# because this release is not yet available from PyPI.
+torchsig-models @ git+https://github.com/TorchDSP/torchsig-models.git@v1.0.0
+jupyterlab>=4.0
+matplotlib>=3.7
+scipy>=1.10
