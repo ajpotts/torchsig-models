@@ -1,0 +1,60 @@
+Title: StaticTorchSigDataset should discover the reader recorded by DatasetCreator
+
+Summary
+
+DatasetCreator in TorchSig 2.2 can infer the reader paired with a known writer
+and records that reader in writer_info.yaml. StaticTorchSigDataset nevertheless
+defaults unconditionally to HDF5Reader unless the caller explicitly supplies
+file_handler_class.
+
+This means a dataset successfully generated with HomogeneousHDF5Writer cannot
+be opened with the otherwise natural call:
+
+    StaticTorchSigDataset(root=dataset_root)
+
+The caller must know and repeat the storage choice:
+
+    StaticTorchSigDataset(
+        root=dataset_root,
+        file_handler_class=HomogeneousHDF5Reader,
+    )
+
+Impact
+
+- Writer/reader selection must be threaded through downstream libraries even
+  though DatasetCreator already persisted the selected reader.
+- Omitting the explicit reader attempts to interpret homogeneous storage using
+  the legacy reader and produces a loading error.
+- Storage metadata can become inconsistent with the reader selected by a
+  caller.
+- Adding another backend requires every consumer to add matching selection
+  logic.
+
+Proposed behavior
+
+When file_handler_class is omitted, StaticTorchSigDataset should read
+writer_info.yaml and resolve the recorded file_reader or
+file_reader_qualified value. It should retain HDF5Reader as the fallback for
+legacy datasets whose metadata does not contain a reader.
+
+An explicitly supplied file_handler_class should continue to take precedence.
+If the explicit reader conflicts with a known recorded reader, TorchSig should
+either raise a clear compatibility error or document that the override is
+intentional.
+
+Acceptance criteria
+
+- A dataset created with HomogeneousHDF5Writer can be loaded by passing only
+  its root to StaticTorchSigDataset.
+- Legacy HDF5 datasets without reader metadata still use HDF5Reader.
+- An explicit file_handler_class continues to work.
+- Missing, malformed, or unimportable reader metadata raises a clear error or
+  follows a documented safe fallback.
+- Tests cover legacy HDF5, homogeneous HDF5, explicit override, and malformed
+  writer metadata.
+
+Workaround
+
+Downstream callers must currently pass the matching reader explicitly. The
+torchsig-models integration passes both file_handler and file_reader through
+its dataset and training utilities.
