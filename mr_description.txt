@@ -1,0 +1,43 @@
+## Summary
+
+Expose the ordered class names used during training on every classifier model and
+persist that mapping in model checkpoints. This removes the need for inference
+code to maintain a separate, version-specific class list and prevents silently
+mapping predictions to labels in the wrong order.
+
+## Changes
+
+- Add shared validation for ordered class-name metadata.
+- Add `class_names` support to XCiT-1D and the B0, B2, and B4 variants of both
+  IQ and spectrogram EfficientNet.
+- Save class names in Lightning checkpoint hyperparameters and restore them as
+  `model.class_names` during checkpoint loading.
+- Source checkpoint labels from the training dataset's actual class ordering.
+- Validate label count, label type, and uniqueness against the classifier output
+  dimension.
+- Keep legacy and weights-only checkpoints loadable with `class_names=None` or
+  an explicit caller-provided mapping. Class mappings are not guessed from the
+  output dimension.
+- Update inference paths and documentation to use checkpoint metadata.
+- Add short synthetic-data examples for XCiT-1D and every 1D/2D EfficientNet
+  variant. Each example generates data, trains, saves and reloads a checkpoint,
+  and converts a prediction index through `model.class_names`.
+
+## Compatibility
+
+Existing constructor calls remain valid because `class_names` is optional.
+Legacy checkpoints without class metadata continue to load, but expose
+`model.class_names` as `None` unless the caller supplies the ordered mapping.
+
+## Validation
+
+- All seven toy model paths completed a training step, checkpoint round trip,
+  and named prediction successfully.
+- Focused metadata/model tests: `93 passed, 2 skipped`.
+- Full suite excluding the unrelated wideband filesystem test:
+  `184 passed, 3 skipped`.
+- Ruff passed for all changed Python files.
+- `git diff --check` passed.
+
+The excluded wideband test attempts to write TorchSig polyphase-filter cache
+files into a read-only dependency source directory in this environment.
