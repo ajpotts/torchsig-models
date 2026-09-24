@@ -1,0 +1,14 @@
+Title: Align spectrogram classifier size with generated dataset classes
+
+Summary
+
+- Build the spectrogram EfficientNet classifier using the generated dataset's
+  class list instead of the global TorchSig signal list.
+- Use the same generated class count for training and evaluation metrics.
+- Update training tests to cover subset and all-signal configurations while
+  preserving the dataset's label-to-name mapping in returned metadata.
+
+Testing
+
+- env NUMBA_CACHE_DIR=/tmp/torchsig-models-numba-cache pytest -q tests/models/spectrogram_models/efficientnet/test_efficientnet_train.py
+- ruff check torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py tests/models/spectrogram_models/efficientnet/test_efficientnet_train.py

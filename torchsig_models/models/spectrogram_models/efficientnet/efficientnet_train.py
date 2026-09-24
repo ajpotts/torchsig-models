@@ -17,7 +17,6 @@ import yaml
 from pytorch_lightning.loggers import Logger
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
-from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.transforms.transforms import Spectrogram
 from torchsig.utils.yaml import load_config_from_yaml
 
@@ -223,7 +222,7 @@ def train_efficientnet_2d(
         transforms=transforms,
     )
 
-    class_list = TorchSigSignalLists.all_signals
+    class_list = data_info["class_names"]
     num_classes = len(class_list)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
