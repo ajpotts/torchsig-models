@@ -1,11 +1,11 @@
-"""Train and reload any 2D EfficientNet on toy spectrogram data."""
+"""Train and reload any 1D EfficientNet on toy IQ data."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from torchsig_models.models.spectrogram_models.efficientnet import (
+from torchsig_models.models.iq_models.efficientnet import (
     efficientnet_b0,
     efficientnet_b2,
     efficientnet_b4,
@@ -14,7 +14,7 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
 from toy_classification_utils import (
     CLASS_NAMES,
     demonstrate_prediction,
-    make_spectrogram_dataset,
+    make_iq_dataset,
     reload_checkpoint,
     save_checkpoint,
     train_steps,
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=2)
     parser.add_argument("--samples-per-class", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=3)
-    parser.add_argument("--size", type=int, default=64)
+    parser.add_argument("--length", type=int, default=256)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/toy_models"))
     return parser.parse_args()
 
@@ -42,13 +42,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Generate data, train, save, reload, and label one prediction."""
     args = parse_args()
-    dataset = make_spectrogram_dataset(args.samples_per_class, args.size, seed=7)
+    dataset = make_iq_dataset(args.samples_per_class, args.length, seed=7)
     factory = MODEL_FACTORIES[args.model]
     model_kwargs = {
         "num_classes": len(CLASS_NAMES),
         "drop_path_rate": 0.0,
         "drop_rate": 0.0,
-        "normalize": True,
     }
     model = factory(**model_kwargs, class_names=CLASS_NAMES)
     train_steps(
@@ -58,7 +57,7 @@ def main() -> None:
         batch_size=args.batch_size,
         learning_rate=3e-3,
     )
-    checkpoint_path = args.output_dir / f"spectrogram_{args.model}_toy.ckpt"
+    checkpoint_path = args.output_dir / f"iq_{args.model}_toy.ckpt"
     save_checkpoint(
         checkpoint_path,
         model,

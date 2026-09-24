@@ -107,6 +107,19 @@ The 1D and 2D EfficientNet inference loaders restore the same metadata onto
 the caller supplies an explicit ordered `class_names` list; mappings are never
 guessed from the number of classifier outputs.
 
+Quick synthetic-data examples generate three classes, train briefly, save and
+reload a checkpoint, and convert a prediction index through `model.class_names`:
+
+```bash
+python examples/scripts/xcit_toy_classification.py
+python examples/scripts/iq_efficientnet_toy_classification.py --model efficientnet_b0
+python examples/scripts/iq_efficientnet_toy_classification.py --model efficientnet_b2
+python examples/scripts/iq_efficientnet_toy_classification.py --model efficientnet_b4
+python examples/scripts/spectrogram_efficientnet_toy_classification.py --model efficientnet_b0
+python examples/scripts/spectrogram_efficientnet_toy_classification.py --model efficientnet_b2
+python examples/scripts/spectrogram_efficientnet_toy_classification.py --model efficientnet_b4
+```
+
 ### Using YOLO Adapter
 
 ```python
