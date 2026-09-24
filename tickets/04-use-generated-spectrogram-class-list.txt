@@ -1,0 +1,35 @@
+Title: Align spectrogram classifier size with generated dataset classes
+
+Criticality: Medium
+Estimated effort: Low
+Type: Correctness
+
+Description:
+Spectrogram EfficientNet training receives the generated class list in
+data_info, but ignores it and always sets num_classes to the size of
+TorchSigSignalLists.all_signals. This is inconsistent with IQ EfficientNet
+training and may create an oversized or incorrectly mapped classifier when
+signal_generators selects only a subset.
+
+It can also make confusion matrices and reported class metrics describe a class
+space different from the actual dataset.
+
+Evidence:
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+  receives data_info from prepare_torchsig_datasets
+- The same function then derives num_classes from
+  TorchSigSignalLists.all_signals rather than data_info["class_names"]
+- IQ EfficientNet training derives its class count from data_info
+
+Proposed resolution:
+Use data_info["class_names"] to define the classifier and metric class count.
+If TorchSig labels intentionally use a global class-index space, document that
+contract and validate/remap labels explicitly instead.
+
+Acceptance criteria:
+- Training with a subset of signal generators produces an output layer and
+  metric trackers matching the intended label space.
+- Full-class training retains its current output size.
+- Tests cover both all-signals and subset configurations and verify label-to-name
+  mapping.
+

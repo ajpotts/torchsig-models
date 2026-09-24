@@ -1,0 +1,36 @@
+Title: Add integration coverage for XCiT, YOLO, and Anomalib paths
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Quality improvement
+
+Description:
+The current tests provide strong coverage for shared utilities and spectrogram
+EfficientNet, but several public adapter and model paths have little or no
+coverage. These are also the areas containing most of the audit's correctness
+and reliability findings.
+
+Observed coverage from the audit run:
+- XCiT inference: 0%
+- YOLO utilities: 13%
+- Anomalib adapter: 19%
+- XCiT model: 19%
+- IQ EfficientNet training: 19%
+- XCiT training: 37%
+- Overall package: 60%
+
+Proposed resolution:
+Add deterministic unit and lightweight integration tests around public behavior,
+using small tensors, fake datasets, mocked downloads, and minimal Lightning
+trainer runs. Avoid real network requests and large generated datasets.
+
+Acceptance criteria:
+- Add XCiT forward, loss, inference-collation, and one-epoch trainer coverage.
+- Add Anomalib dataset-bound, split-validation, label, and rescaling coverage.
+- Add YOLO conversion and mocked atomic-download coverage.
+- Add IQ training orchestration tests comparable to the spectrogram training
+  tests.
+- New tests are deterministic and run in CPU-only CI.
+- Establish a coverage threshold for changed production code without weakening
+  existing assertions.
+

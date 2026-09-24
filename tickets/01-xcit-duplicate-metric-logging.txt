@@ -1,0 +1,37 @@
+Title: Prevent duplicate XCiT metric logging
+
+Criticality: High
+Estimated effort: Low
+Type: Bug
+
+Description:
+XCiTClassifier logs train_loss, train_acc, val_loss, and val_acc directly from
+its training and validation steps. XCiT training also installs
+ClassifierMetricsTrackerCallback, which logs the same metric names at epoch end
+with different Lightning logging options.
+
+PyTorch Lightning can reject repeated calls for the same metric name when their
+logging metadata differs. Even when accepted by a particular Lightning version,
+the two producers make it ambiguous which value is used by checkpointing and
+reporting.
+
+Evidence:
+- torchsig_models/models/iq_models/xcit/xcit1d.py, training_step and
+  validation_step
+- torchsig_models/utils/classifier_metrics_tracker.py, _log_metrics
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py installs the callback
+  while ModelCheckpoint monitors val_loss
+
+Proposed resolution:
+Choose one owner for aggregate metrics. Prefer having the callback own epoch
+metrics and changing or removing the overlapping logging in XCiTClassifier.
+Ensure ModelCheckpoint continues to receive an epoch-level val_loss.
+
+Acceptance criteria:
+- XCiT training completes at least one train and validation epoch without a
+  duplicate-metric logging error.
+- Each public metric name has one unambiguous producer.
+- val_loss remains available to ModelCheckpoint at validation epoch end.
+- A regression test exercises XCiTClassifier with
+  ClassifierMetricsTrackerCallback attached.
+

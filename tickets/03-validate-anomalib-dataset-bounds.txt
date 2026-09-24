@@ -1,0 +1,38 @@
+Title: Validate Anomalib dataset sizes, splits, and index bounds
+
+Criticality: High
+Estimated effort: Low
+Type: Bug
+
+Description:
+TorchSigAnomalibDataModule accepts a requested subset size without checking it
+against the underlying dataset length. Split proportions are also not checked
+for count, sign, range, or total. The resulting inclusive index bounds can be
+negative, overlap incorrectly, or extend beyond the static dataset and cause an
+IndexError during iteration.
+
+Direct TorchSigAnomalibDataset construction also defaults index_bounds to
+[0, 0], which exposes only the first sample. An omitted bound should normally
+mean the complete dataset.
+
+Evidence:
+- torchsig_models/adapters/anomalib_utils.py, TorchSigAnomalibDataset.__init__,
+  __len__, and __getitem__
+- torchsig_models/adapters/anomalib_utils.py,
+  TorchSigAnomalibDataModule.__init__ split calculations
+
+Proposed resolution:
+- Validate that size is positive and no greater than full_dataset_size.
+- Require exactly three nonnegative split proportions whose sum is approximately
+  one.
+- Validate all explicit inclusive bounds against the dataset length.
+- Replace mutable/default [0, 0] bounds with None and resolve None to the full
+  dataset.
+
+Acceptance criteria:
+- Valid splits cover the requested subset exactly once with no overlap or gaps.
+- Oversized, zero, or negative sizes raise a clear ValueError.
+- Invalid split counts, negative values, and invalid totals raise ValueError.
+- Direct construction without bounds exposes the full static dataset.
+- Tests cover normal, zero-length-boundary, and invalid-input cases.
+

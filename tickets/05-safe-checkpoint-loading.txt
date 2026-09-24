@@ -1,0 +1,28 @@
+Title: Avoid unsafe pickle deserialization during model inference
+
+Criticality: Medium
+Estimated effort: Low
+Type: Security
+
+Description:
+Spectrogram EfficientNet inference explicitly passes weights_only=False to
+torch.load. Loading an untrusted pickle-based checkpoint in this mode can
+execute arbitrary code before the state dictionary is validated.
+
+Evidence:
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_inference.py
+  calls torch.load(..., weights_only=False)
+
+Proposed resolution:
+Use weights_only=True for checkpoints that contain tensors and primitive
+metadata. If legacy checkpoints require general pickle loading, make that an
+explicit opt-in with a prominent trust warning rather than the default.
+
+Acceptance criteria:
+- Standard project checkpoints load with weights_only=True.
+- Arbitrary serialized Python objects are not loaded by the default inference
+  path.
+- Any unsafe compatibility mode requires an explicit caller or CLI option and
+  documents that the checkpoint must be trusted.
+- Tests cover plain state dictionaries and Lightning checkpoint dictionaries.
+

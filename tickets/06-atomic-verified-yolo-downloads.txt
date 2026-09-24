@@ -1,0 +1,30 @@
+Title: Make YOLO model downloads atomic and verifiable
+
+Criticality: Medium
+Estimated effort: Low
+Type: Reliability and supply-chain hardening
+
+Description:
+get_yolo_model writes a network response directly to the final model path. If
+the request fails during streaming, a partial file remains. On the next call,
+the function trusts any existing file and returns it without validation.
+
+The downloaded model is not checked against an expected digest, so corruption
+or unexpected upstream content is not detected before model loading.
+
+Evidence:
+- torchsig_models/adapters/yolo_utils.py, get_yolo_model
+
+Proposed resolution:
+Stream into a temporary file in the destination directory, verify the expected
+SHA-256 digest and basic nonempty-file conditions, then atomically replace the
+final path. Delete the temporary file on every failure path. Optionally validate
+an existing destination before returning it.
+
+Acceptance criteria:
+- Failed or interrupted downloads do not leave a file at the final path.
+- A successful verified download is moved atomically into place.
+- Digest mismatches raise a clear exception and remove temporary data.
+- Tests simulate success, HTTP failure, interrupted streaming, and checksum
+  mismatch without accessing the live network.
+
