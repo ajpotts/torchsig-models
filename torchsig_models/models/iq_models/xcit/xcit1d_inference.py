@@ -2,7 +2,6 @@
 
 from torchsig_models.models import XCiTClassifier
 from torchsig_models.utils.training import configure_determinism
-from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.utils.defaults import TorchSigDefaults
 from torchsig.datasets.datamodules import TorchSigDataModule
 from torchsig.transforms.transforms import ComplexTo2D
@@ -144,10 +143,6 @@ def xcit1d_inference(
     dataset_metadata = dict(base)
     dataset_metadata.update(cfg.dataset_metadata)
 
-    # Same class definition as training.
-    class_list = TorchSigSignalLists.all_signals
-    num_classes = len(class_list)
-
     # Seed the split for repeatable inference. To exactly match an old training run,
     # use the same seeding before dm.setup() in the training script as well.
     pl.seed_everything(cfg.seed, workers=True)
@@ -185,8 +180,6 @@ def xcit1d_inference(
     # Load model from Lightning checkpoint.
     model = XCiTClassifier.load_from_checkpoint(
         checkpoint_path,
-        input_channels=2,
-        num_classes=num_classes,
         map_location=device,
     )
     model.to(device)

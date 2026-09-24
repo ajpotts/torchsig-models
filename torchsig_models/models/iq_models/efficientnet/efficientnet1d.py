@@ -6,6 +6,7 @@ This module adapts timm EfficientNet architectures by replacing
 
 import timm
 import torch
+from torchsig_models.utils.class_names import validate_class_names
 from torch import nn
 from timm.layers.norm_act import BatchNormAct2d
 from timm.models._efficientnet_blocks import SqueezeExcite as TimmSqueezeExcite
@@ -299,6 +300,7 @@ def _create_effnet_1d(
     ds_rate: int = 2,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    class_names: list[str] | None = None,
 ) -> nn.Module:
     """Create and configure a 1D EfficientNet model."""
     model_num_classes = (
@@ -325,7 +327,9 @@ def _create_effnet_1d(
     if num_classes != model_num_classes:
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
 
-    return NormalizedModel(model)
+    wrapped_model = NormalizedModel(model)
+    wrapped_model.class_names = validate_class_names(class_names, num_classes)
+    return wrapped_model
 
 
 def efficientnet_b0(
@@ -334,6 +338,7 @@ def efficientnet_b0(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    class_names: list[str] | None = None,
 ):
     """Construct a 1D EfficientNet-B0 model for IQ signal classification.
 
@@ -362,6 +367,9 @@ def efficientnet_b0(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        class_names (list[str] | None):
+            Optional labels ordered by classifier output index.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B0 model.
@@ -373,6 +381,7 @@ def efficientnet_b0(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        class_names=class_names,
     )
 
 
@@ -382,6 +391,7 @@ def efficientnet_b2(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    class_names: list[str] | None = None,
 ):
     """Construct a 1D EfficientNet-B2 model for IQ signal classification.
 
@@ -410,6 +420,9 @@ def efficientnet_b2(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        class_names (list[str] | None):
+            Optional labels ordered by classifier output index.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B2 model.
@@ -421,6 +434,7 @@ def efficientnet_b2(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        class_names=class_names,
     )
 
 
@@ -430,6 +444,7 @@ def efficientnet_b4(
     drop_rate: float = 0.3,
     pretrained: bool = False,
     checkpoint_path: str | None = None,
+    class_names: list[str] | None = None,
 ):
     """Construct a 1D EfficientNet-B4 model for IQ signal classification.
 
@@ -458,6 +473,9 @@ def efficientnet_b4(
             Optional path to a pretrained checkpoint. Reserved for
             future use when pretrained loading support is added.
 
+        class_names (list[str] | None):
+            Optional labels ordered by classifier output index.
+
     Returns:
         nn.Module:
             Configured EfficientNet-B4 model.
@@ -469,4 +487,5 @@ def efficientnet_b4(
         drop_rate=drop_rate,
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
+        class_names=class_names,
     )

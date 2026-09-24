@@ -383,10 +383,8 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
     train_loader = object()
     val_loader = object()
     test_loader = object()
-    data_info = {
-        "dataset": "info",
-        "class_names": ["bpsk", "qpsk"],
-    }
+    class_names = ["bpsk", "qpsk", "ook"]
+    data_info = {"dataset": "info", "class_names": class_names}
 
     prepare_datasets = MagicMock(
         return_value=(
@@ -492,10 +490,11 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
     assert transforms[0].fft_size == 128
 
     model_factory.assert_called_once_with(
-        num_classes=2,
+        num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
         normalize=True,
+        class_names=class_names,
     )
 
     train_validate.assert_called_once()
@@ -517,7 +516,8 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
         torch.optim.lr_scheduler.SequentialLR,
     )
     assert training_call["max_epochs"] == 10
-    assert training_call["num_classes"] == 2
+    assert training_call["num_classes"] == 3
+    assert training_call["class_names"] == class_names
     assert training_call["metrics_dir"] == metrics_dir
     assert training_call["checkpoint_dir"] == checkpoint_dir
     assert training_call["logger"] is logger
@@ -528,13 +528,18 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
 
     expected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    assert training_call["num_classes"] == 3
+    assert training_call["class_names"] == class_names
+
     evaluate_classifier.assert_called_once_with(
         model=model,
         test_loader=test_loader,
         device=expected_device,
-        num_classes=2,
+        num_classes=3,
         criterion=training_call["criterion"],
     )
+
+    assert result["num_classes"] == 3
 
     test_metrics.save_to_csv.assert_called_once_with(metrics_dir / "test")
     compute_num_params.assert_called_once_with(model)
@@ -547,11 +552,11 @@ def test_train_efficientnet_2d_uses_generated_subset_class_list(
         "train_loader": train_loader,
         "val_loader": val_loader,
         "test_loader": test_loader,
-        "num_classes": 2,
+        "num_classes": 3,
         "num_params": 15,
         "data_info": data_info,
     }
-    assert result["data_info"]["class_names"] == ["bpsk", "qpsk"]
+    assert result["data_info"]["class_names"] == class_names
 
 
 def test_train_efficientnet_2d_uses_default_optional_model_params(
@@ -631,6 +636,7 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         drop_path_rate=0.2,
         drop_rate=0.3,
         normalize=False,
+        class_names=TorchSigSignalLists.all_signals,
     )
 
 

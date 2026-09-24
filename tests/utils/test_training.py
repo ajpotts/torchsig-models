@@ -159,6 +159,24 @@ def test_compute_num_params_returns_zero_when_all_parameters_frozen():
     assert compute_num_params(model) == 0
 
 
+def test_signal_classifier_saves_class_names_in_checkpoint_hyperparameters():
+    model = torch.nn.Linear(4, 2)
+    optimizer = torch.optim.Adam(model.parameters())
+    class_names = ["second", "first"]
+
+    classifier = SignalClassifier(
+        model=model,
+        criterion=torch.nn.CrossEntropyLoss(),
+        optimizer=optimizer,
+        num_classes=2,
+        class_names=class_names,
+    )
+
+    assert classifier.class_names == class_names
+    assert classifier.model.class_names == class_names
+    assert classifier.hparams["class_names"] == class_names
+
+
 @pytest.mark.slow_no_gpu
 def test_narrowband_training(
     narrowband_dataloaders,

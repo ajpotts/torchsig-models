@@ -71,7 +71,11 @@ def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
     dm.setup()
 
     # model
-    model = XCiTClassifier(input_channels=2, num_classes=num_classes)
+    model = XCiTClassifier(
+        input_channels=2,
+        num_classes=num_classes,
+        class_names=class_list,
+    )
 
     # callbacks
     callbacks = []

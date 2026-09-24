@@ -91,6 +91,22 @@ model = XCiTClassifier(num_classes=24)
 metrics_tracker = ClassifierMetricsTracker(num_classes=24)
 ```
 
+### Checkpoint Class Names
+
+Classifier checkpoints created by the training entry points include labels in
+classifier-output order. After loading an XCiT Lightning checkpoint, predicted
+indices can be converted without a separately maintained label list:
+
+```python
+model = XCiTClassifier.load_from_checkpoint(checkpoint_path)
+class_name = model.class_names[predicted_index]
+```
+
+The 1D and 2D EfficientNet inference loaders restore the same metadata onto
+`model.class_names`. Legacy and weights-only checkpoints expose `None` unless
+the caller supplies an explicit ordered `class_names` list; mappings are never
+guessed from the number of classifier outputs.
+
 ### Using YOLO Adapter
 
 ```python
@@ -196,4 +212,3 @@ If you use TorchSig Models in your research, please cite:
 ## Support
 
 For questions, issues, or feature requests, please open an issue on our [GitHub repository](https://github.com/TorchDSP/torchsig-models/issues).
-

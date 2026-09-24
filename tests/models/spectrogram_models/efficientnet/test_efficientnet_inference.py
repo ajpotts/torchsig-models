@@ -123,7 +123,10 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     checkpoint = {
         "state_dict": {
             "model.layer.weight": torch.ones(1),
-        }
+        },
+        "hyper_parameters": {
+            "class_names": ["first", "second", "third"],
+        },
     }
     torch_load = MagicMock(return_value=checkpoint)
     monkeypatch.setattr(
@@ -176,6 +179,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         drop_path_rate=0.1,
         drop_rate=0.25,
         normalize=True,
+        class_names=["first", "second", "third"],
     )
 
     torch_load.assert_called_once_with(
