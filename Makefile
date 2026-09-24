@@ -10,6 +10,7 @@ ifneq ($(wildcard .venv/bin/python),)
 endif
 PIP = $(PYTHON) -m pip
 PYTEST = $(PYTHON) -m pytest
+COVERAGE_MIN ?= 60
 
 # Directories
 SRC_DIR = torchsig_models
@@ -57,11 +58,12 @@ TEST_MODE ?= fast
 
 test:
 	@echo "Running tests ($(TEST_MODE) mode)..."
-	$(PYTEST) $(TEST_DIR) --test-mode=$(TEST_MODE)
+	$(PYTEST) $(TEST_DIR) --test-mode=$(TEST_MODE) --cov-fail-under=$(COVERAGE_MIN)
 
 test-cov:
 	@echo "Running tests with coverage..."
-	$(PYTEST) --cov=$(SRC_DIR) --cov-report=term-missing $(TEST_DIR)
+	$(PYTEST) --cov=$(SRC_DIR) --cov-report=term-missing \
+		--cov-fail-under=$(COVERAGE_MIN) $(TEST_DIR)
 
 # test-notebooks target
 NOTEBOOKS        := $(wildcard examples/*.ipynb)
@@ -220,4 +222,3 @@ check-lfs:
 # - Use 'make test' before every commit.
 # - Use 'make clean' if you encounter weird filesystem issues.
 # ==============================================================================
-

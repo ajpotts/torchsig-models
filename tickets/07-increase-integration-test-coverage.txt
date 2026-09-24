@@ -1,5 +1,6 @@
 Title: Add integration coverage for XCiT, YOLO, and Anomalib paths
 
+Status: Completed
 Criticality: Medium
 Estimated effort: Medium
 Type: Quality improvement
@@ -34,3 +35,10 @@ Acceptance criteria:
 - Establish a coverage threshold for changed production code without weakening
   existing assertions.
 
+Completion notes:
+- Added deterministic XCiT forward, focal-loss, inference-collation, and CPU
+  one-epoch Lightning coverage.
+- Added Anomalib bounds, labels, rescaling, and strict-xfail validation coverage.
+- Added YOLO conversion and strict-xfail interrupted-download coverage.
+- Added IQ EfficientNet training orchestration coverage.
+- Added a 60% coverage floor to standard Make and GitHub test commands.
