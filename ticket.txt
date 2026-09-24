@@ -1,0 +1,55 @@
+Description
+When loading the TorchSig 2.1.1 XCiT checkpoint for inference, users must manually hard-code the ordered list of 57 class names:
+model = XCiTClassifier.load_from_checkpoint(checkpoint_path) class_names = CLASS_NAMES_V211
+The class-to-index mapping is part of the trained model’s contract, so it should be stored with the checkpoint or recoverable through the model API. Hard-coding it in notebooks is brittle and could silently produce incorrect labels if the class order changes.
+Proposed behavior
+Provide a documented way to retrieve the ordered class names after loading a checkpoint, for example:
+model = XCiTClassifier.load_from_checkpoint(checkpoint_path) class_names = model.class_names
+Potential implementation:
+
+
+        
+      Save the ordered class names as checkpoint hyperparameters or metadata during training.
+
+        
+      Restore and expose them on the loaded classifier.
+
+        
+      Validate that len(class_names) matches the classifier’s output dimension.
+
+        
+      Preserve compatibility with existing checkpoints, possibly through a version-specific fallback mapping.
+
+        
+      Add unit tests covering checkpoint save/load and class-order preservation.
+
+Acceptance criteria
+
+
+        
+      Users can retrieve the ordered class names directly from a newly created checkpoint.
+
+        
+      The class order exactly matches the training dataset’s label-to-index mapping.
+
+        
+      A clear error or documented fallback is provided for legacy checkpoints without class metadata.
+
+        
+      Documentation includes an inference example that converts predicted indices to class names without a hard-coded list.
+      
+      
+      
+    rom Claude/Fable:
+Prior art strongly converges on storing the label mapping with the weights:
+
+Hugging Face PretrainedConfig stores id2label and label2id and serializes them to config.json; inference reads model.config.id2label.
+Ultralytics YOLO stores class names as a dict[int, str] accessible via model.names (documented example: >>> print(model.names) yields {0: 'person', 1: 'bicycle', 2: 'car', ...}), normalized on load by check_class_names in ultralytics/nn/autobackend.py ("Check class names. Map imagenet class codes to human-readable names if required. Convert lists to dicts.").
+timm stores label_names in pretrained_cfg; inference reads model.pretrained_cfg['label_names'].
+torchvision stores categories in WeightsEnum.meta['categories']; inference reads weights.meta['categories'][class_id].
+safetensors supports a free-form string-to-string map for exactly this kind of side-channel metadata: per the format spec, "A special key metadata is allowed to contain free form string-to-string map" (values must be strings; the header is size-capped).
+
+When loading the TorchSig 2.1.1 XCiT checkpoint, users must hard-code the ordered 57-class list:
+python model = XCiTClassifier.load_from_checkpoint(checkpoint_path) class_names = CLASS_NAMES_V211 # brittle, hand-maintained, silently wrong if order drifts
+The class-to-index contract is a property of the trained model, not the notebook. If the dataset's class order changes between versions (and it did: 53 to 57 to "60+"), a stale hard-coded list produces silently mislabeled predictions. The fix is to make the ordered list travel with the checkpoint and be recoverable from the model API.
+ 
