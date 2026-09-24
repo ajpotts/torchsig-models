@@ -16,6 +16,11 @@ from pathlib import Path
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.utils.defaults import TorchSigDefaults
+from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
+from torchsig.utils.file_handlers.homogeneous_hdf5 import (
+    HomogeneousHDF5Reader,
+    HomogeneousHDF5Writer,
+)
 
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
     train_efficientnet_2d,
@@ -45,6 +50,14 @@ def parse_args() -> argparse.Namespace:
         "--overwrite",
         action="store_true",
         help="Regenerate static datasets if they already exist.",
+    )
+    parser.add_argument(
+        "--homogeneous-hdf5",
+        action="store_true",
+        help=(
+            "Store fixed-shape spectrograms with TorchSig's homogeneous HDF5 "
+            "backend."
+        ),
     )
     return parser.parse_args()
 
@@ -92,6 +105,8 @@ def make_config(
 def main() -> None:
     """Generate data, train EfficientNet-B0, and report baseline metrics."""
     args = parse_args()
+    file_handler = HomogeneousHDF5Writer if args.homogeneous_hdf5 else HDF5Writer
+    file_reader = HomogeneousHDF5Reader if args.homogeneous_hdf5 else HDF5Reader
     params = {
         "batch_size": args.batch_size,
         "max_epochs": args.epochs,
@@ -116,6 +131,11 @@ def main() -> None:
         logger=False,
         accelerator="auto",
         devices="auto",
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options={"chunk_samples": args.batch_size}
+        if args.homogeneous_hdf5
+        else None,
     )
 
     test_dataset = result["test_loader"].dataset

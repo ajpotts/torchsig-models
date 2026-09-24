@@ -1,7 +1,14 @@
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import torch
-from torch.utils.data import RandomSampler, SequentialSampler, TensorDataset
+from torch.utils.data import Dataset, RandomSampler, SequentialSampler, TensorDataset
+from torchsig.signals.signal_types import Signal
+from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
+from torchsig.utils.file_handlers.homogeneous_hdf5 import (
+    HomogeneousHDF5Reader,
+    HomogeneousHDF5Writer,
+)
 
 
 from torchsig_models.utils.datasets import (
@@ -25,6 +32,22 @@ class DummyConfig:
 class SeedableTensorDataset(TensorDataset):
     def seed(self, seed: int) -> None:
         self.seed_value = seed
+
+
+class HomogeneousSignalDataset(Dataset):
+    class_names = ["tone"]
+
+    def seed(self, seed: int) -> None:
+        self.seed_value = seed
+
+    def __len__(self) -> int:
+        return 3
+
+    def __getitem__(self, index: int) -> Signal:
+        return Signal(
+            data=np.full(8, index, dtype=np.complex64),
+            class_index=index,
+        )
 
 
 def test_dataset_metadata_merges_defaults():
@@ -127,6 +150,7 @@ def test_create_static_dataset_creates_dataset(
 
     static_dataset_cls.assert_called_once_with(
         root=str(tmp_path / "train"),
+        file_handler_class=HDF5Reader,
         target_labels=["class_index"],
     )
     assert result is static_dataset
@@ -300,6 +324,110 @@ def test_prepare_torchsig_datasets_uses_explicit_transforms(
     creation_calls = iterable_dataset_cls.call_args_list
     assert len(creation_calls) == 3
     assert all(call.kwargs["transforms"] is transforms for call in creation_calls)
+
+
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
+def test_prepare_torchsig_datasets_forwards_file_handler_configuration(
+    iterable_dataset_cls,
+    dataloader_cls,
+    dataset_creator_cls,
+    static_dataset_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    writer = MagicMock(name="writer")
+    reader = MagicMock(name="reader")
+    options = {"compression": "gzip", "chunk_samples": 4}
+
+    iterable_dataset_cls.return_value.class_names = ["class_a"]
+    dataset_creator_cls.return_value = MagicMock()
+    static_dataset_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+    dataloader_cls.side_effect = [MagicMock() for _ in range(6)]
+
+    prepare_torchsig_datasets(
+        train_cfg=cfg,
+        val_cfg=cfg,
+        test_cfg=cfg,
+        dataset_root=tmp_path,
+        file_handler=writer,
+        file_reader=reader,
+        file_handler_options=options,
+    )
+
+    assert dataset_creator_cls.call_count == 3
+    for call in dataset_creator_cls.call_args_list:
+        assert call.kwargs["file_handler"] is writer
+        assert call.kwargs["file_reader"] is reader
+        assert call.kwargs["compression"] == "gzip"
+        assert call.kwargs["chunk_samples"] == 4
+
+    assert static_dataset_cls.call_count == 3
+    assert all(
+        call.kwargs["file_handler_class"] is reader
+        for call in static_dataset_cls.call_args_list
+    )
+
+
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
+def test_prepare_torchsig_datasets_defaults_to_legacy_hdf5(
+    iterable_dataset_cls,
+    dataloader_cls,
+    dataset_creator_cls,
+    static_dataset_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    iterable_dataset_cls.return_value.class_names = ["class_a"]
+    dataset_creator_cls.return_value = MagicMock()
+    static_dataset_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+    dataloader_cls.side_effect = [MagicMock() for _ in range(6)]
+
+    prepare_torchsig_datasets(cfg, cfg, cfg, dataset_root=tmp_path)
+
+    assert all(
+        call.kwargs["file_handler"] is HDF5Writer
+        and call.kwargs["file_reader"] is HDF5Reader
+        for call in dataset_creator_cls.call_args_list
+    )
+
+
+def test_create_static_dataset_round_trips_homogeneous_hdf5(tmp_path):
+    cfg = DummyConfig()
+    cfg.dataset_length = 3
+
+    with patch(
+        "torchsig_models.utils.datasets.TorchSigIterableDataset",
+        return_value=HomogeneousSignalDataset(),
+    ):
+        dataset, class_names = _create_static_dataset(
+            cfg=cfg,
+            split="train",
+            root=tmp_path,
+            transforms=[],
+            batch_size=2,
+            overwrite=True,
+            file_handler=HomogeneousHDF5Writer,
+            file_reader=HomogeneousHDF5Reader,
+            file_handler_options={"compression": None},
+        )
+
+    assert class_names == ["tone"]
+    assert len(dataset) == 3
+    for index in range(3):
+        data, label = dataset[index]
+        np.testing.assert_array_equal(
+            data,
+            np.full(8, index, dtype=np.complex64),
+        )
+        assert data.dtype == np.complex64
+        assert label == index
+    dataset.reader.teardown()
 
 
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")

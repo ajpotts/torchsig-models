@@ -18,6 +18,8 @@ from pytorch_lightning.loggers import Logger
 import logging
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
+from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.iq_models.efficientnet import (
@@ -134,6 +136,9 @@ def train_efficientnet_iq(
     overwrite: bool = False,
     model_name: EfficientNetModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] = HDF5Writer,
+    file_reader: type[FileReader] = HDF5Reader,
+    file_handler_options: dict[str, Any] | None = None,
     logger: Logger | bool | None = True,
     accelerator: str = "gpu",
     devices: int | str | list[int] = 1,
@@ -154,6 +159,9 @@ def train_efficientnet_iq(
         model_name: EfficientNet architecture to train.
         signal_generators: Signal generator selection passed to dataset
             preparation.
+        file_handler: Writer used for generated static datasets.
+        file_reader: Reader paired with ``file_handler``.
+        file_handler_options: Optional keyword arguments for the writer.
 
 
     Returns:
@@ -179,6 +187,9 @@ def train_efficientnet_iq(
         batch_size=params["batch_size"],
         overwrite=overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
     module_logger.info("Datasets ready.")
 

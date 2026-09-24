@@ -20,6 +20,8 @@ from torchsig.transforms.transforms import (
 )
 from torchsig.utils.data_loading import WorkerSeedingDataLoader
 from torchsig.utils.defaults import TorchSigDefaults
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
+from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
 from torchsig.utils.writer import DatasetCreator
 
 
@@ -68,9 +70,14 @@ def _create_static_dataset(
     overwrite: bool,
     *,
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] = HDF5Writer,
+    file_reader: type[FileReader] = HDF5Reader,
+    file_handler_options: dict[str, Any] | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
+    if file_handler_options is None:
+        file_handler_options = {}
 
     iterable_dataset = TorchSigIterableDataset(
         metadata=_dataset_metadata(cfg),
@@ -87,11 +94,15 @@ def _create_static_dataset(
         root=str(split_root),
         overwrite=overwrite,
         dataset_length=int(cfg.dataset_length),
+        file_handler=file_handler,
+        file_reader=file_reader,
+        **file_handler_options,
     )
     creator.create()
 
     static_dataset = StaticTorchSigDataset(
         root=str(split_root),
+        file_handler_class=file_reader,
         target_labels=getattr(
             cfg,
             "target_labels",
@@ -116,6 +127,9 @@ def prepare_torchsig_datasets(
     batch_size: int = 64,
     overwrite: bool = False,
     transforms: list[Transform] | None = None,
+    file_handler: type[FileWriter] = HDF5Writer,
+    file_reader: type[FileReader] = HDF5Reader,
+    file_handler_options: dict[str, Any] | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -134,6 +148,14 @@ def prepare_torchsig_datasets(
         overwrite: Whether existing static datasets may be overwritten.
         transforms: Optional transforms applied while generating every split.
             When omitted, transforms are inferred from ``train_cfg``.
+        file_handler: Writer used to store each static dataset split. The
+            legacy HDF5 writer remains the default.
+        file_reader: Reader paired with ``file_handler`` and used to reopen
+            each generated split.
+        file_handler_options: Optional keyword arguments forwarded to the
+            file handler, such as compression or chunk sizing. Homogeneous
+            HDF5 requires every top-level sample to have the same shape and
+            dtype.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -152,6 +174,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     val_dataset, _ = _create_static_dataset(
@@ -162,6 +187,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     test_dataset, _ = _create_static_dataset(
@@ -172,6 +200,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     return (

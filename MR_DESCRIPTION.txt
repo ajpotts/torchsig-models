@@ -1,0 +1,55 @@
+Title: Add opt-in homogeneous HDF5 support for TorchSig 2.2 datasets
+
+Summary
+
+This MR adds opt-in support for TorchSig 2.2's homogeneous HDF5 backend when
+generating static datasets. The legacy HDF5 backend remains the default, so
+existing callers and datasets retain their current behavior.
+
+Changes
+
+- Add file_handler, file_reader, and file_handler_options arguments to the
+  shared dataset preparation utilities.
+- Forward the storage configuration consistently to train, validation, and
+  test DatasetCreator instances.
+- Reopen each generated split with the reader paired with the selected writer.
+- Expose the same storage options through the EfficientNet IQ and spectrogram
+  training entry points.
+- Add --homogeneous-hdf5 to the toy spectrogram classification example.
+- Raise the minimum TorchSig dependency from 2.1.1 to 2.2.
+- Add unit coverage for defaults and option forwarding.
+- Add a real homogeneous HDF5 round-trip test that verifies sample values,
+  labels, shape, and complex64 dtype preservation.
+
+Usage
+
+Run the toy example with homogeneous HDF5 enabled:
+
+    python examples/scripts/spectrogram_efficientnet_toy_classification.py \
+        --homogeneous-hdf5
+
+Library callers can pass HomogeneousHDF5Writer and HomogeneousHDF5Reader to
+prepare_torchsig_datasets(), train_efficientnet_iq(), or
+train_efficientnet_2d(). Writer-specific settings such as compression and
+chunk_samples can be supplied through file_handler_options.
+
+Compatibility
+
+- Legacy HDF5 remains the default.
+- Existing calls require no changes.
+- Homogeneous HDF5 is appropriate only when every top-level sample has the
+  same shape and dtype.
+- Existing static datasets remain readable through the legacy defaults.
+
+Validation
+
+- ruff check on all changed Python files: passed.
+- Focused pytest suite: 57 passed.
+- Real homogeneous HDF5 complex64 round trip: passed.
+- Example command-line help smoke test: passed.
+- git diff --check: passed.
+
+The initial pytest invocation encountered a Numba cache-locator error while
+loading TorchSig. Re-running the suite with NUMBA_DISABLE_JIT=1 succeeded; the
+error was unrelated to these changes.
+
