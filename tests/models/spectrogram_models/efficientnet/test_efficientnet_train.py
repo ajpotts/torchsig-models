@@ -12,6 +12,7 @@ import torch
 import yaml
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
+from torchsig.signals.signal_lists import TorchSigSignalLists
 from torchsig.transforms.transforms import Spectrogram
 
 import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train as training_module
@@ -368,11 +369,11 @@ def test_parse_args_reads_overrides(
 # =============================================================================
 
 
-def test_train_efficientnet_2d_runs_training_pipeline(
+def test_train_efficientnet_2d_uses_generated_subset_class_list(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify the full training pipeline delegates to shared utilities."""
+    """Verify subset class names define model outputs and metric dimensions."""
     train_cfg = _dataset_config(seed=11, fft_size=128)
     val_cfg = _dataset_config(seed=12, fft_size=128)
     test_cfg = _dataset_config(seed=13, fft_size=128)
@@ -382,7 +383,10 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     train_loader = object()
     val_loader = object()
     test_loader = object()
-    data_info = {"dataset": "info"}
+    data_info = {
+        "dataset": "info",
+        "class_names": ["bpsk", "qpsk"],
+    }
 
     prepare_datasets = MagicMock(
         return_value=(
@@ -445,12 +449,6 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         compute_num_params,
     )
 
-    monkeypatch.setattr(
-        training_module.TorchSigSignalLists,
-        "all_signals",
-        ["bpsk", "qpsk", "ook"],
-    )
-
     logger = MagicMock()
     checkpoint_dir = tmp_path / "checkpoints"
     metrics_dir = tmp_path / "metrics"
@@ -494,7 +492,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
     assert transforms[0].fft_size == 128
 
     model_factory.assert_called_once_with(
-        num_classes=3,
+        num_classes=2,
         drop_path_rate=0.1,
         drop_rate=0.2,
         normalize=True,
@@ -519,7 +517,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         torch.optim.lr_scheduler.SequentialLR,
     )
     assert training_call["max_epochs"] == 10
-    assert training_call["num_classes"] == 3
+    assert training_call["num_classes"] == 2
     assert training_call["metrics_dir"] == metrics_dir
     assert training_call["checkpoint_dir"] == checkpoint_dir
     assert training_call["logger"] is logger
@@ -534,7 +532,7 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         model=model,
         test_loader=test_loader,
         device=expected_device,
-        num_classes=3,
+        num_classes=2,
         criterion=training_call["criterion"],
     )
 
@@ -549,17 +547,18 @@ def test_train_efficientnet_2d_runs_training_pipeline(
         "train_loader": train_loader,
         "val_loader": val_loader,
         "test_loader": test_loader,
-        "num_classes": 3,
+        "num_classes": 2,
         "num_params": 15,
         "data_info": data_info,
     }
+    assert result["data_info"]["class_names"] == ["bpsk", "qpsk"]
 
 
 def test_train_efficientnet_2d_uses_default_optional_model_params(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Verify default dropout parameters are used when omitted."""
+    """Verify full-class training keeps every generated output class."""
     train_cfg = _dataset_config()
     val_cfg = _dataset_config()
     test_cfg = _dataset_config()
@@ -579,7 +578,7 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
                 object(),
                 object(),
                 object(),
-                {},
+                {"class_names": TorchSigSignalLists.all_signals},
             )
         ),
     )
@@ -618,12 +617,6 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
         "set_deterministic",
         MagicMock(),
     )
-    monkeypatch.setattr(
-        training_module.TorchSigSignalLists,
-        "all_signals",
-        ["bpsk", "qpsk"],
-    )
-
     train_efficientnet_2d(
         train_cfg=train_cfg,
         val_cfg=val_cfg,
@@ -634,7 +627,7 @@ def test_train_efficientnet_2d_uses_default_optional_model_params(
     )
 
     model_factory.assert_called_once_with(
-        num_classes=2,
+        num_classes=len(TorchSigSignalLists.all_signals),
         drop_path_rate=0.2,
         drop_rate=0.3,
         normalize=False,
@@ -659,7 +652,7 @@ def test_train_efficientnet_2d_uses_checkpoint_metrics_directory_by_default(
                 object(),
                 object(),
                 object(),
-                {},
+                {"class_names": ["bpsk", "qpsk"]},
             )
         ),
     )
@@ -699,12 +692,6 @@ def test_train_efficientnet_2d_uses_checkpoint_metrics_directory_by_default(
         "set_deterministic",
         MagicMock(),
     )
-    monkeypatch.setattr(
-        training_module.TorchSigSignalLists,
-        "all_signals",
-        ["bpsk", "qpsk"],
-    )
-
     checkpoint_dir = tmp_path / "checkpoints"
 
     train_efficientnet_2d(
@@ -740,7 +727,7 @@ def test_train_efficientnet_2d_builds_expected_loss_and_optimizer(
                 object(),
                 object(),
                 object(),
-                {},
+                {"class_names": ["bpsk", "qpsk", "ook"]},
             )
         ),
     )
@@ -779,12 +766,6 @@ def test_train_efficientnet_2d_builds_expected_loss_and_optimizer(
         "set_deterministic",
         MagicMock(),
     )
-    monkeypatch.setattr(
-        training_module.TorchSigSignalLists,
-        "all_signals",
-        ["bpsk", "qpsk", "ook"],
-    )
-
     train_efficientnet_2d(
         train_cfg=train_cfg,
         val_cfg=val_cfg,
