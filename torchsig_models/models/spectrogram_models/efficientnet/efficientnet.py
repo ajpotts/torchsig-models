@@ -3,6 +3,7 @@
 import timm
 import torch
 from torch import nn
+from torchsig_models.utils.class_names import validate_class_names
 
 __all__ = [
     "efficientnet_b0",
@@ -88,6 +89,7 @@ def _create_effnet_2d(
     pretrained: bool = False,
     checkpoint_path: str | None = None,
     normalize: bool = False,
+    class_names: list[str] | None = None,
 ) -> nn.Module:
     """Create and configure a 2D EfficientNet model."""
     model_num_classes = (
@@ -111,7 +113,9 @@ def _create_effnet_2d(
     if num_classes != model_num_classes:
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
 
-    return NormalizedModel(model, normalize=normalize)
+    wrapped_model = NormalizedModel(model, normalize=normalize)
+    wrapped_model.class_names = validate_class_names(class_names, num_classes)
+    return wrapped_model
 
 
 def efficientnet_b0(
@@ -122,11 +126,13 @@ def efficientnet_b0(
     pretrained: bool = False,
     checkpoint_path: str | None = None,
     normalize: bool = False,
+    class_names: list[str] | None = None,
 ) -> nn.Module:
     """Construct a 2D EfficientNet-B0 spectrogram classifier.
 
     Args:
         normalize: Whether to standardize each input sample and channel.
+        class_names: Optional labels ordered by classifier output index.
     """
     return _create_effnet_2d(
         "efficientnet_b0",
@@ -137,6 +143,7 @@ def efficientnet_b0(
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
         normalize=normalize,
+        class_names=class_names,
     )
 
 
@@ -148,11 +155,13 @@ def efficientnet_b2(
     pretrained: bool = False,
     checkpoint_path: str | None = None,
     normalize: bool = False,
+    class_names: list[str] | None = None,
 ) -> nn.Module:
     """Construct a 2D EfficientNet-B2 spectrogram classifier.
 
     Args:
         normalize: Whether to standardize each input sample and channel.
+        class_names: Optional labels ordered by classifier output index.
     """
     return _create_effnet_2d(
         "efficientnet_b2",
@@ -163,6 +172,7 @@ def efficientnet_b2(
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
         normalize=normalize,
+        class_names=class_names,
     )
 
 
@@ -174,11 +184,13 @@ def efficientnet_b4(
     pretrained: bool = False,
     checkpoint_path: str | None = None,
     normalize: bool = False,
+    class_names: list[str] | None = None,
 ) -> nn.Module:
     """Construct a 2D EfficientNet-B4 spectrogram classifier.
 
     Args:
         normalize: Whether to standardize each input sample and channel.
+        class_names: Optional labels ordered by classifier output index.
     """
     return _create_effnet_2d(
         "efficientnet_b4",
@@ -189,4 +201,5 @@ def efficientnet_b4(
         pretrained=pretrained,
         checkpoint_path=checkpoint_path,
         normalize=normalize,
+        class_names=class_names,
     )

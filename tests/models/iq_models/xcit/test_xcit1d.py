@@ -7,6 +7,7 @@ import pytest
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+from unittest.mock import MagicMock
 
 import torchsig_models.models.iq_models.xcit.xcit1d as xcit_module
 from torchsig_models.models.iq_models.xcit.xcit1d import FocalLoss, XCiT1d
@@ -150,3 +151,28 @@ def test_xcit_classifier_runs_one_epoch_with_metrics_callback(
 
     assert len(callback.train_metrics.history["loss"]) == 1
     assert len(callback.val_metrics.history["loss"]) == 1
+
+
+def test_xcit_classifier_saves_and_exposes_class_names(monkeypatch) -> None:
+    monkeypatch.setattr(xcit_module, "XCiT1d", MagicMock())
+    class_names = ["second", "first"]
+
+    model = xcit_module.XCiTClassifier(
+        input_channels=2,
+        num_classes=2,
+        class_names=class_names,
+    )
+
+    assert model.class_names == class_names
+    assert model.hparams["class_names"] == class_names
+
+
+def test_xcit_classifier_rejects_duplicate_class_names(monkeypatch) -> None:
+    monkeypatch.setattr(xcit_module, "XCiT1d", MagicMock())
+
+    with pytest.raises(ValueError, match="must not contain duplicates"):
+        xcit_module.XCiTClassifier(
+            input_channels=2,
+            num_classes=2,
+            class_names=["duplicate", "duplicate"],
+        )

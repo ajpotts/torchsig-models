@@ -101,4 +101,3 @@ def test_get_yolo_model_does_not_leave_partial_destination(
         yolo_utils.get_yolo_model(destination)
 
     assert not destination.exists()
-

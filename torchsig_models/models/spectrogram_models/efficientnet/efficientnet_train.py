@@ -232,6 +232,7 @@ def train_efficientnet_2d(
         drop_path_rate=params.get("drop_path", 0.2),
         drop_rate=params.get("drop_rate", 0.3),
         normalize=params.get("normalize", False),
+        class_names=class_list,
     )
 
     criterion = torch.nn.CrossEntropyLoss(
@@ -258,6 +259,7 @@ def train_efficientnet_2d(
         scheduler=scheduler,
         max_epochs=params["max_epochs"],
         num_classes=num_classes,
+        class_names=class_list,
         metrics_dir=metrics_dir,
         checkpoint_dir=checkpoint_dir,
         logger=logger,

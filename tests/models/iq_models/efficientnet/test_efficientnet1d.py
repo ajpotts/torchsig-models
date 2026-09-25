@@ -21,6 +21,14 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_inference impo
 )
 
 
+def test_efficientnet_1d_exposes_ordered_class_names():
+    class_names = ["second", "first"]
+
+    model = efficientnet_b0(num_classes=2, class_names=class_names)
+
+    assert model.class_names == class_names
+
+
 def test_squeeze_excite_1d_preserves_shape():
     module = SqueezeExcite1d(in_chs=8, reduced_base_chs=2)
 

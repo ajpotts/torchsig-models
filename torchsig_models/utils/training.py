@@ -17,6 +17,7 @@ from torchsig_models.utils.classifier_metrics_tracker import (
     ClassifierMetricsTracker,
     ClassifierMetricsTrackerCallback,
 )
+from torchsig_models.utils.class_names import validate_class_names
 
 
 logger = logging.getLogger(__name__)
@@ -215,6 +216,15 @@ class SignalClassifier(pl.LightningModule):
             computing loss. This can help avoid numerical instability for
             certain loss functions and extreme model outputs.
 
+        num_classes:
+            Number of classifier outputs. Required when ``class_names`` is
+            provided.
+
+        class_names:
+            Optional labels ordered by classifier output index. The labels are
+            saved with Lightning checkpoints and exposed on both this wrapper
+            and the wrapped model.
+
     Note:
         This class assumes a standard multiclass classification workflow where
         batches are provided as ``(inputs, targets)`` tuples and the model
@@ -228,8 +238,19 @@ class SignalClassifier(pl.LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
         clamp_logits: bool = True,
+        num_classes: int | None = None,
+        class_names: list[str] | None = None,
     ) -> None:
         super().__init__()
+
+        if class_names is not None and num_classes is None:
+            raise ValueError("num_classes is required when class_names are supplied.")
+        self.class_names = (
+            validate_class_names(class_names, num_classes)
+            if num_classes is not None
+            else None
+        )
+        model.class_names = self.class_names
 
         self.save_hyperparameters(
             ignore=["model", "criterion", "optimizer", "scheduler"]
@@ -388,6 +409,7 @@ def train_validate(
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     max_epochs: int,
     num_classes: int,
+    class_names: list[str] | None = None,
     metrics_dir: str | Path | None = None,
     checkpoint_dir: str | Path | None = None,
     accelerator: str = "auto",
@@ -436,6 +458,10 @@ def train_validate(
         num_classes:
             Number of target classes used for metric tracking and confusion
             matrix generation.
+
+        class_names:
+            Optional labels ordered by classifier output index. These are
+            validated and saved in Lightning checkpoints.
 
         metrics_dir:
             Optional directory used by
@@ -491,6 +517,8 @@ def train_validate(
         optimizer=optimizer,
         scheduler=scheduler,
         clamp_logits=clamp_logits,
+        num_classes=num_classes,
+        class_names=class_names,
     )
 
     metrics_callback = ClassifierMetricsTrackerCallback(

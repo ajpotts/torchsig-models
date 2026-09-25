@@ -8,6 +8,7 @@ import timm
 from torch import Tensor
 
 from pytorch_lightning import LightningModule
+from torchsig_models.utils.class_names import validate_class_names
 
 __all__ = ["XCiT1d", "XCiTClassifier"]
 
@@ -184,8 +185,10 @@ class XCiTClassifier(LightningModule):
         ds_rate: int = 16,
         learning_rate: float = 2.5e-4,
         weight_decay: float = 6.25e-5,
+        class_names: list[str] | None = None,
     ):
         super().__init__()
+        self.class_names = validate_class_names(class_names, num_classes)
         self.save_hyperparameters()
         self.model = XCiT1d(
             input_channels=input_channels,

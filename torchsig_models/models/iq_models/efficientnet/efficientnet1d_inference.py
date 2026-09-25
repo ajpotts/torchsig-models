@@ -9,6 +9,7 @@ The module can be imported as a library or executed as a command-line script.
 """
 
 from pathlib import Path
+from typing import Any
 
 import argparse
 import torch
@@ -22,6 +23,7 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
     MODEL_FACTORY,
     load_training_params,
 )
+from torchsig_models.utils.class_names import checkpoint_class_names
 from torchsig_models.utils.training import evaluate_classifier, configure_determinism
 
 
@@ -68,6 +70,7 @@ def efficientnet1d_inference(
     batch_size: int = 4,
     num_workers: int = 8,
     num_classes: int | None = None,
+    class_names: list[str] | None = None,
     model_name: EfficientNetModelName = "efficientnet_b4",
 ) -> float:
     """Evaluate a trained EfficientNet-1D model on a static TorchSig dataset.
@@ -87,6 +90,8 @@ def efficientnet1d_inference(
         num_workers: Number of data loader worker processes.
         num_classes: Optional output class count. By default, this is inferred
             from the checkpoint classifier weights.
+        class_names: Optional ordered labels for a legacy or weights-only
+            checkpoint. Embedded checkpoint metadata takes precedence.
         model_name: EfficientNet architecture to instantiate.
 
     Returns:
@@ -110,11 +115,20 @@ def efficientnet1d_inference(
     state_dict = checkpoint.get("state_dict", checkpoint)
     state_dict = _strip_lightning_prefix(state_dict)
     num_classes = _resolve_num_classes(state_dict, num_classes)
+    stored_class_names = checkpoint_class_names(checkpoint, num_classes)
+    if stored_class_names is not None:
+        class_names = stored_class_names
+
+    model_kwargs: dict[str, Any] = {
+        "num_classes": num_classes,
+        "drop_path_rate": params.get("drop_path", 0.2),
+        "drop_rate": params.get("drop_rate", 0.3),
+    }
+    if class_names is not None:
+        model_kwargs["class_names"] = class_names
 
     model = MODEL_FACTORY[model_name](
-        num_classes=num_classes,
-        drop_path_rate=params.get("drop_path", 0.2),
-        drop_rate=params.get("drop_rate", 0.3),
+        **model_kwargs,
     )
 
     seed_everything(seed, workers=True)

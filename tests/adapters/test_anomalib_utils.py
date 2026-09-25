@@ -33,9 +33,7 @@ class _FakeStaticDataset:
 @pytest.fixture
 def fake_static_dataset(monkeypatch: pytest.MonkeyPatch) -> type[_FakeStaticDataset]:
     monkeypatch.setattr(anomalib_utils, "StaticTorchSigDataset", _FakeStaticDataset)
-    _FakeStaticDataset.samples = [
-        np.zeros((4, 5), dtype=np.float32) for _ in range(6)
-    ]
+    _FakeStaticDataset.samples = [np.zeros((4, 5), dtype=np.float32) for _ in range(6)]
     return _FakeStaticDataset
 
 
@@ -79,9 +77,7 @@ def test_anomaly_label_marks_only_configured_classes() -> None:
 
 def test_spectrogram_rescale_fixed_range_clips_and_scales() -> None:
     transform = SpectrogramRescale(clip_db_range=(-100.0, 0.0))
-    signal = SimpleNamespace(
-        data=np.array([[-120.0, -50.0, 10.0]], dtype=np.float32)
-    )
+    signal = SimpleNamespace(data=np.array([[-120.0, -50.0, 10.0]], dtype=np.float32))
 
     result = transform.__apply__(signal)
 
@@ -114,4 +110,3 @@ def test_anomalib_datamodule_rejects_invalid_splits(
 ) -> None:
     with pytest.raises(ValueError, match="split"):
         TorchSigAnomalibDataModule(root=str(tmp_path), splits=splits)
-

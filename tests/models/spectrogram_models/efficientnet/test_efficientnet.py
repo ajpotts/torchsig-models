@@ -37,6 +37,19 @@ def test_efficientnet_2d_forward_shape(model_factory):
     assert out.shape == (2, 72)
 
 
+def test_efficientnet_exposes_ordered_class_names() -> None:
+    class_names = ["second", "first"]
+
+    model = efficientnet_b0(num_classes=2, class_names=class_names)
+
+    assert model.class_names == class_names
+
+
+def test_efficientnet_rejects_wrong_class_name_count() -> None:
+    with pytest.raises(ValueError, match="Expected 2 class names"):
+        efficientnet_b0(num_classes=2, class_names=["only-one"])
+
+
 @pytest.mark.parametrize(
     "model_factory",
     [

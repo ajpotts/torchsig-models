@@ -87,6 +87,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         num_classes=3,
         drop_path_rate=0.1,
         drop_rate=0.2,
+        class_names=["a", "b", "c"],
     )
 
     training_call = train_validate.call_args.kwargs
@@ -96,9 +97,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
     assert isinstance(training_call["criterion"], torch.nn.CrossEntropyLoss)
     assert training_call["criterion"].label_smoothing == pytest.approx(0.05)
     assert isinstance(training_call["optimizer"], torch.optim.AdamW)
-    assert isinstance(
-        training_call["scheduler"], torch.optim.lr_scheduler.SequentialLR
-    )
+    assert isinstance(training_call["scheduler"], torch.optim.lr_scheduler.SequentialLR)
     assert training_call["num_classes"] == 3
     assert training_call["accelerator"] == "cpu"
     assert training_call["devices"] == 1
