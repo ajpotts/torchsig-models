@@ -1,4 +1,4 @@
-"""XCiT models for spectrogram classification."""
+"""XCiT models for multi-signal wideband spectrogram classification."""
 
 from .xcit import xcit_nano
 

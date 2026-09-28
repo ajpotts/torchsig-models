@@ -1,4 +1,4 @@
-"""Inference entry point for XCiT spectrogram classifiers."""
+"""Inference entry point for XCiT wideband multi-label classifiers."""
 
 import argparse
 from pathlib import Path
@@ -23,8 +23,9 @@ def xcit_inference(
     batch_size: int = 4,
     num_workers: int = 8,
     num_classes: int = 72,
+    threshold: float = 0.5,
 ) -> float:
-    """Evaluate XCiT-Nano on a static TorchSig spectrogram dataset.
+    """Evaluate XCiT-Nano on a multi-signal wideband spectrogram dataset.
 
     Args:
         root: Static TorchSig test-dataset directory.
@@ -33,6 +34,7 @@ def xcit_inference(
         batch_size: Evaluation batch size.
         num_workers: Data-loader worker count.
         num_classes: Number of classifier output classes.
+        threshold: Sigmoid decision threshold for each signal class.
 
     Returns:
         Final classification accuracy.
@@ -53,13 +55,19 @@ def xcit_inference(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device).eval()
     test_loader = prepare_torchsig_inference_dataset(
-        root, batch_size=batch_size, num_workers=num_workers
+        root,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        target_labels=["multi_hot_label"],
     )
     tracker = evaluate_classifier(
         model=model,
         test_loader=test_loader,
         device=device,
         num_classes=num_classes,
+        criterion=torch.nn.BCEWithLogitsLoss(),
+        task="multilabel",
+        threshold=threshold,
     )
     accuracy = float(tracker.history["accuracy"][-1])
     print(f"\nTest accuracy: {accuracy:.4%}")
@@ -77,6 +85,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--num-classes", type=int, default=72)
+    parser.add_argument("--threshold", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -89,4 +98,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         num_classes=args.num_classes,
+        threshold=args.threshold,
     )

@@ -23,10 +23,10 @@ search_space:
     type: float
     low: 0.0
     high: 0.4
-  label_smoothing:
+  decision_threshold:
     type: float
-    low: 0.0
-    high: 0.1
+    low: 0.3
+    high: 0.7
   batch_size:
     type: categorical
     choices: [8, 16, 32]

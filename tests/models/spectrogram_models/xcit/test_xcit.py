@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -7,6 +8,8 @@ import torch
 from torchsig_models.models.spectrogram_models.xcit import xcit_nano
 from torchsig_models.models.spectrogram_models.xcit.xcit_train import (
     _resolve_config_path,
+    _validate_wideband_config,
+    _wideband_transforms,
     load_training_params,
     parse_args,
 )
@@ -41,14 +44,38 @@ def test_xcit_nano_cpu_smoke_training_step() -> None:
     model = xcit_nano(num_classes=4, input_channels=2, drop_path_rate=0.0)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     inputs = torch.randn(2, 2, 64, 80)
-    targets = torch.tensor([0, 3])
+    targets = torch.tensor(
+        [[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0]]
+    )
 
     optimizer.zero_grad()
-    loss = torch.nn.functional.cross_entropy(model(inputs), targets)
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(
+        model(inputs), targets
+    )
     loss.backward()
     optimizer.step()
 
     assert torch.isfinite(loss)
+
+
+def test_wideband_config_requires_multiple_signals() -> None:
+    cfg = SimpleNamespace(
+        output_representation="spectrogram",
+        dataset_metadata={"num_signals_max": 1},
+    )
+
+    with pytest.raises(ValueError, match="allow multiple signals"):
+        _validate_wideband_config(cfg, "training")
+
+
+def test_wideband_transforms_create_multi_hot_targets() -> None:
+    cfg = SimpleNamespace(dataset_metadata={"fft_size": 64})
+
+    transforms = _wideband_transforms(cfg, num_classes=5)
+
+    assert transforms[0].fft_size == 64
+    assert transforms[1].num_classes == 5
+    assert transforms[1].output_key == "multi_hot_label"
 
 
 def test_xcit_nano_checkpoint_round_trip(tmp_path: Path) -> None:
@@ -71,6 +98,8 @@ def test_default_training_params_are_available() -> None:
 
     assert params["model_name"] == "xcit_nano"
     assert params["input_channels"] == 1
+    assert params["experiment_name"] == "spectrogram_wideband_multilabel"
+    assert params["decision_threshold"] == 0.5
 
 
 def test_load_training_params_rejects_missing_file(tmp_path: Path) -> None:

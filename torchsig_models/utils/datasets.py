@@ -68,6 +68,7 @@ def _create_static_dataset(
     overwrite: bool,
     *,
     signal_generators: str | list[str] = "all",
+    target_labels: list[str] | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
@@ -76,6 +77,7 @@ def _create_static_dataset(
         metadata=_dataset_metadata(cfg),
         transforms=transforms,
         signal_generators=signal_generators,
+        target_labels=target_labels,
     )
 
     creator = DatasetCreator(
@@ -92,10 +94,10 @@ def _create_static_dataset(
 
     static_dataset = StaticTorchSigDataset(
         root=str(split_root),
-        target_labels=getattr(
-            cfg,
-            "target_labels",
-            ["class_index"],
+        target_labels=(
+            target_labels
+            if target_labels is not None
+            else getattr(cfg, "target_labels", ["class_index"])
         ),
     )
 
@@ -116,6 +118,7 @@ def prepare_torchsig_datasets(
     batch_size: int = 64,
     overwrite: bool = False,
     transforms: list[Transform] | None = None,
+    target_labels: list[str] | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -134,6 +137,7 @@ def prepare_torchsig_datasets(
         overwrite: Whether existing static datasets may be overwritten.
         transforms: Optional transforms applied while generating every split.
             When omitted, transforms are inferred from ``train_cfg``.
+        target_labels: Optional sample-level labels returned by every split.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -152,6 +156,7 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        target_labels=target_labels,
     )
 
     val_dataset, _ = _create_static_dataset(
@@ -162,6 +167,7 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        target_labels=target_labels,
     )
 
     test_dataset, _ = _create_static_dataset(
@@ -172,6 +178,7 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        target_labels=target_labels,
     )
 
     return (

@@ -37,6 +37,33 @@ def test_classifier_metrics_tracker_compute_and_store():
     ]
 
 
+def test_classifier_metrics_tracker_supports_multilabel_targets():
+    tracker = ClassifierMetricsTracker(
+        n_classes=3,
+        device="cpu",
+        task="multilabel",
+        threshold=0.5,
+    )
+    targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
+
+    tracker.update(targets.bool(), targets, torch.tensor(0.25))
+    metrics = tracker.compute_and_store()
+
+    assert metrics["accuracy"] == pytest.approx(1.0)
+    assert metrics["f1 score"] == pytest.approx(1.0)
+    assert len(tracker.conf_mats[0]) == 3
+
+
+@pytest.mark.parametrize("threshold", [0.0, 1.0, -0.1, 1.1])
+def test_classifier_metrics_tracker_rejects_invalid_threshold(threshold):
+    with pytest.raises(ValueError, match="threshold must be between"):
+        ClassifierMetricsTracker(
+            n_classes=2,
+            task="multilabel",
+            threshold=threshold,
+        )
+
+
 def test_classifier_metrics_tracker_resets_after_compute():
     tracker = ClassifierMetricsTracker(n_classes=2, device="cpu")
 

@@ -37,6 +37,8 @@ class ClassifierMetricsTracker:
         averaging: dict[str, str] | None = None,
         device: torch.device | str | None = None,
         sync_on_compute: bool = False,
+        task: str = "multiclass",
+        threshold: float = 0.5,
     ) -> None:
         """Initialize a classifier metrics tracker.
 
@@ -63,6 +65,12 @@ class ClassifierMetricsTracker:
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.sync_on_compute = sync_on_compute
+        if task not in {"multiclass", "multilabel"}:
+            raise ValueError("task must be 'multiclass' or 'multilabel'.")
+        if not 0.0 < threshold < 1.0:
+            raise ValueError("threshold must be between 0 and 1.")
+        self.task = task
+        self.threshold = threshold
 
         averaging = averaging or {}
         self.averaging = {
@@ -99,33 +107,38 @@ class ClassifierMetricsTracker:
         if device is not None:
             self.device = torch.device(device)
 
+        class_arg = (
+            {"num_classes": self.n_classes}
+            if self.task == "multiclass"
+            else {"num_labels": self.n_classes, "threshold": self.threshold}
+        )
         self.metrics = {
             "cm": ConfusionMatrix(
-                task="multiclass",
-                num_classes=self.n_classes,
+                task=self.task,
+                **class_arg,
                 sync_on_compute=self.sync_on_compute,
             ).to(self.device),
             "accuracy": Accuracy(
-                task="multiclass",
-                num_classes=self.n_classes,
+                task=self.task,
+                **class_arg,
                 average=self.averaging["accuracy"],
                 sync_on_compute=self.sync_on_compute,
             ).to(self.device),
             "f1 score": F1Score(
-                task="multiclass",
-                num_classes=self.n_classes,
+                task=self.task,
+                **class_arg,
                 average=self.averaging["f1 score"],
                 sync_on_compute=self.sync_on_compute,
             ).to(self.device),
             "precision": Precision(
-                task="multiclass",
-                num_classes=self.n_classes,
+                task=self.task,
+                **class_arg,
                 average=self.averaging["precision"],
                 sync_on_compute=self.sync_on_compute,
             ).to(self.device),
             "recall": Recall(
-                task="multiclass",
-                num_classes=self.n_classes,
+                task=self.task,
+                **class_arg,
                 average=self.averaging["recall"],
                 sync_on_compute=self.sync_on_compute,
             ).to(self.device),
@@ -421,6 +434,8 @@ class ClassifierMetricsTrackerCallback(Callback):
         averaging: dict[str, str] | None = None,
         save_on_epoch_end: bool = True,
         sync_on_compute: bool = True,
+        task: str = "multiclass",
+        threshold: float = 0.5,
     ) -> None:
         """Initialize a Lightning callback for classifier metric tracking.
 
@@ -438,16 +453,22 @@ class ClassifierMetricsTrackerCallback(Callback):
         self.metrics_dir = Path(metrics_dir) if metrics_dir is not None else None
         self.save_on_epoch_end = save_on_epoch_end
         self.sync_on_compute = sync_on_compute
+        self.task = task
+        self.threshold = threshold
 
         self.train_metrics = ClassifierMetricsTracker(
             n_classes,
             averaging=averaging,
             sync_on_compute=sync_on_compute,
+            task=task,
+            threshold=threshold,
         )
         self.val_metrics = ClassifierMetricsTracker(
             n_classes,
             averaging=averaging,
             sync_on_compute=sync_on_compute,
+            task=task,
+            threshold=threshold,
         )
 
     def on_train_epoch_start(
@@ -567,7 +588,11 @@ class ClassifierMetricsTrackerCallback(Callback):
         if "preds" in outputs:
             preds = outputs["preds"]
         elif "logits" in outputs:
-            preds = outputs["logits"].argmax(dim=1)
+            preds = (
+                outputs["logits"].argmax(dim=1)
+                if self.task == "multiclass"
+                else torch.sigmoid(outputs["logits"]) >= self.threshold
+            )
         else:
             raise ValueError("Expected step output to contain `preds` or `logits`.")
 

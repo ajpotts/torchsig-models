@@ -1,15 +1,21 @@
 # Spectrogram XCiT
 
-`xcit_nano` wraps timm's `xcit_nano_12_p16_224` for TorchSig spectrogram
-classification. Inputs may be `[batch, frequency, time]` for single-channel
-spectrograms or `[batch, channels, frequency, time]`. One- and two-channel
-inputs are supported directly, and spatial dimensions may vary.
+`xcit_nano` wraps timm's `xcit_nano_12_p16_224` for multi-label signal-presence
+classification in wideband TorchSig spectrograms. Inputs may be
+`[batch, frequency, time]` for single-channel spectrograms or
+`[batch, channels, frequency, time]`. Outputs are independent class logits;
+apply sigmoid and a decision threshold to identify every class present.
 
 ```python
 from torchsig_models.models.spectrogram_models.xcit import xcit_nano
 
 model = xcit_nano(num_classes=72, input_channels=2)
+present = torch.sigmoid(model(spectrograms)) >= 0.5
 ```
+
+Training configurations must allow at least two signals per sample. Dataset
+creation adds TorchSig's `MultiHotLabel`, and training uses
+`BCEWithLogitsLoss` with multilabel accuracy, precision, recall, and F1.
 
 Example CPU training invocation:
 

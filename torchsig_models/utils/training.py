@@ -183,7 +183,7 @@ def compute_num_params(model: torch.nn.Module) -> int:
 
 
 class SignalClassifier(pl.LightningModule):
-    """Generic PyTorch Lightning wrapper for multiclass classification models.
+    """Generic Lightning wrapper for multiclass and multilabel classifiers.
 
     This module provides a lightweight Lightning interface around a standard
     PyTorch classification model. It handles forward propagation, loss
@@ -225,6 +225,9 @@ class SignalClassifier(pl.LightningModule):
             saved with Lightning checkpoints and exposed on both this wrapper
             and the wrapped model.
 
+        task:
+            Classification task, either ``"multiclass"`` or ``"multilabel"``.
+
     Note:
         This class assumes a standard multiclass classification workflow where
         batches are provided as ``(inputs, targets)`` tuples and the model
@@ -240,6 +243,7 @@ class SignalClassifier(pl.LightningModule):
         clamp_logits: bool = True,
         num_classes: int | None = None,
         class_names: list[str] | None = None,
+        task: str = "multiclass",
     ) -> None:
         super().__init__()
 
@@ -251,6 +255,9 @@ class SignalClassifier(pl.LightningModule):
             else None
         )
         model.class_names = self.class_names
+        if task not in {"multiclass", "multilabel"}:
+            raise ValueError("task must be 'multiclass' or 'multilabel'.")
+        self.task = task
 
         self.save_hyperparameters(
             ignore=["model", "criterion", "optimizer", "scheduler"]
@@ -301,6 +308,8 @@ class SignalClassifier(pl.LightningModule):
             - ``targets``: Detached target labels.
         """
         x, y = batch
+        if self.task == "multilabel":
+            y = y.float()
         logits = self(x)
 
         if self.clamp_logits:
@@ -420,8 +429,10 @@ def train_validate(
     enable_progress_bar: bool = True,
     clamp_logits: bool = True,
     logger: Logger | bool | None = True,
+    task: str = "multiclass",
+    threshold: float = 0.5,
 ) -> tuple[SignalClassifier, ClassifierMetricsTrackerCallback]:
-    """Train and validate a multiclass classifier using PyTorch Lightning.
+    """Train and validate a classifier using PyTorch Lightning.
 
     This function wraps a PyTorch model in ``SignalClassifier``, configures
     metric tracking via ``ClassifierMetricsTrackerCallback``, optionally enables
@@ -462,6 +473,12 @@ def train_validate(
         class_names:
             Optional labels ordered by classifier output index. These are
             validated and saved in Lightning checkpoints.
+
+        task:
+            Classification task, either ``"multiclass"`` or ``"multilabel"``.
+
+        threshold:
+            Sigmoid decision threshold used for multilabel metrics.
 
         metrics_dir:
             Optional directory used by
@@ -519,11 +536,14 @@ def train_validate(
         clamp_logits=clamp_logits,
         num_classes=num_classes,
         class_names=class_names,
+        task=task,
     )
 
     metrics_callback = ClassifierMetricsTrackerCallback(
         n_classes=int(num_classes),
         metrics_dir=metrics_dir,
+        task=task,
+        threshold=threshold,
     )
 
     callbacks: list[Callback] = [metrics_callback]
@@ -572,8 +592,10 @@ def evaluate_classifier(
     device: torch.device,
     num_classes: int,
     criterion: torch.nn.Module | None = None,
+    task: str = "multiclass",
+    threshold: float = 0.5,
 ) -> ClassifierMetricsTracker:
-    """Evaluate a multiclass classifier on a test dataset.
+    """Evaluate a multiclass or multilabel classifier on a test dataset.
 
     Runs inference on all samples provided by ``test_loader`` and computes
     aggregate classification metrics using ``ClassifierMetricsTracker``.
@@ -604,6 +626,12 @@ def evaluate_classifier(
             loss. If ``None``, classification metrics are still computed but
             loss history will contain a default value.
 
+        task:
+            Classification task, either ``"multiclass"`` or ``"multilabel"``.
+
+        threshold:
+            Sigmoid decision threshold used for multilabel predictions.
+
     Returns:
         ClassifierMetricsTracker containing the computed evaluation metrics,
         metric histories, and confusion matrices.
@@ -629,15 +657,23 @@ def evaluate_classifier(
         n_classes=num_classes,
         device=device,
         sync_on_compute=False,
+        task=task,
+        threshold=threshold,
     )
 
     with torch.no_grad():
         for x, y in test_loader:
             x = x.to(device)
             y = y.to(device)
+            if task == "multilabel":
+                y = y.float()
 
             logits = model(x)
-            preds = logits.argmax(dim=1)
+            preds = (
+                logits.argmax(dim=1)
+                if task == "multiclass"
+                else torch.sigmoid(logits) >= threshold
+            )
             loss = criterion(logits, y) if criterion is not None else None
 
             tracker.update(preds, y, loss)

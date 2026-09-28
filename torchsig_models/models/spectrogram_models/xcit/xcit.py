@@ -1,4 +1,4 @@
-"""Two-dimensional XCiT classifiers for spectrogram inputs."""
+"""Two-dimensional XCiT multi-label classifiers for wideband spectrograms."""
 
 from pathlib import Path
 
@@ -36,10 +36,10 @@ def xcit_nano(
     checkpoint_path: str | Path | None = None,
     normalize: bool = False,
 ) -> nn.Module:
-    """Construct an XCiT-Nano spectrogram classifier.
+    """Construct an XCiT-Nano wideband signal-presence classifier.
 
     Args:
-        num_classes: Number of classifier output classes.
+        num_classes: Number of independent signal-presence logits.
         input_channels: Number of spectrogram channels. One- and two-channel
             inputs are supported directly without RGB channel duplication.
         drop_path_rate: Stochastic-depth rate.
@@ -50,8 +50,8 @@ def xcit_nano(
         normalize: Whether to standardize each input sample and channel.
 
     Returns:
-        An XCiT-Nano classifier accepting ``[B, C, F, T]`` or single-channel
-        ``[B, F, T]`` spectrogram batches.
+        An XCiT-Nano model producing ``[B, num_classes]`` logits. Apply a
+        sigmoid and threshold each output independently during inference.
     """
     model = timm.create_model(
         "xcit_nano_12_p16_224",

@@ -10,12 +10,12 @@ import yaml
 from pytorch_lightning.loggers import Logger
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.signals.signal_lists import TorchSigSignalLists
+from torchsig.transforms.metadata_transforms import MultiHotLabel
+from torchsig.transforms.transforms import Spectrogram
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
     _build_scheduler,
-    _spectrogram_transforms,
-    _validate_single_signal_config,
 )
 from torchsig_models.models.spectrogram_models.xcit import xcit_nano
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
@@ -27,6 +27,22 @@ from torchsig_models.utils.training import (
 )
 
 __all__ = ["load_training_params", "train_xcit_2d"]
+
+
+def _validate_wideband_config(cfg: TorchSigDatasetConfig, split: str) -> None:
+    """Require a multi-signal spectrogram configuration."""
+    if cfg.output_representation.lower() != "spectrogram":
+        raise ValueError(f"The {split} configuration must output spectrograms.")
+    if int(cfg.dataset_metadata.get("num_signals_max", 1)) < 2:
+        raise ValueError(
+            f"The {split} configuration must allow multiple signals per sample."
+        )
+
+
+def _wideband_transforms(cfg: TorchSigDatasetConfig, num_classes: int) -> list[Any]:
+    """Build transforms for wideband inputs and multi-hot targets."""
+    fft_size = int(cfg.dataset_metadata.get("fft_size", 256))
+    return [Spectrogram(fft_size=fft_size), MultiHotLabel(num_classes=num_classes)]
 
 
 def load_training_params(params_path: str | Path | None = None) -> dict[str, Any]:
@@ -57,14 +73,20 @@ def train_xcit_2d(
     accelerator: str = "auto",
     devices: int | str | list[int] = "auto",
 ) -> dict[str, Any]:
-    """Train and evaluate XCiT-Nano on TorchSig spectrogram datasets."""
+    """Train XCiT-Nano for multi-label wideband signal classification."""
     for cfg, split in ((train_cfg, "training"), (val_cfg, "validation"), (test_cfg, "test")):
-        _validate_single_signal_config(cfg, split)
+        _validate_wideband_config(cfg, split)
     set_deterministic(int(train_cfg.seed))
 
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     metrics_dir = Path(metrics_dir) if metrics_dir else checkpoint_dir / "metrics"
+    class_names = (
+        list(signal_generators)
+        if isinstance(signal_generators, list)
+        else list(TorchSigSignalLists.all_signals)
+    )
+    num_classes = len(class_names)
     train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
         train_cfg,
         val_cfg,
@@ -73,12 +95,8 @@ def train_xcit_2d(
         batch_size=params["batch_size"],
         overwrite=overwrite,
         signal_generators=signal_generators,
-        transforms=_spectrogram_transforms(train_cfg),
-    )
-    num_classes = (
-        len(signal_generators)
-        if isinstance(signal_generators, list)
-        else len(TorchSigSignalLists.all_signals)
+        transforms=_wideband_transforms(train_cfg, num_classes),
+        target_labels=["multi_hot_label"],
     )
     model = xcit_nano(
         num_classes=num_classes,
@@ -87,9 +105,7 @@ def train_xcit_2d(
         drop_rate=params.get("drop_rate", 0.3),
         normalize=params.get("normalize", False),
     )
-    criterion = torch.nn.CrossEntropyLoss(
-        label_smoothing=params.get("label_smoothing", 0.0)
-    )
+    criterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=params["learning_rate"],
@@ -105,11 +121,14 @@ def train_xcit_2d(
         scheduler=scheduler,
         max_epochs=params["max_epochs"],
         num_classes=num_classes,
+        class_names=class_names,
         metrics_dir=metrics_dir,
         checkpoint_dir=checkpoint_dir,
         logger=logger,
         accelerator=accelerator,
         devices=devices,
+        task="multilabel",
+        threshold=float(params.get("decision_threshold", 0.5)),
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     test_metrics = evaluate_classifier(
@@ -118,6 +137,8 @@ def train_xcit_2d(
         device=device,
         num_classes=num_classes,
         criterion=criterion,
+        task="multilabel",
+        threshold=float(params.get("decision_threshold", 0.5)),
     )
     test_metrics.save_to_csv(metrics_dir / "test")
     return {
