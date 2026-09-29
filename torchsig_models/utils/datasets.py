@@ -78,12 +78,18 @@ def _create_static_dataset(
         signal_generators=signal_generators,
     )
 
+    creation_loader = WorkerSeedingDataLoader(
+        iterable_dataset,
+        batch_size=batch_size,
+        collate_fn=lambda batch: batch,
+        seed=cfg.seed,
+    )
+    # Worker initialization does not run when num_workers=0, so explicitly
+    # seed both the loader and its iterable dataset before generation.
+    creation_loader.seed(cfg.seed)
+
     creator = DatasetCreator(
-        dataloader=WorkerSeedingDataLoader(
-            iterable_dataset,
-            batch_size=batch_size,
-            collate_fn=lambda batch: batch,
-        ),
+        dataloader=creation_loader,
         root=str(split_root),
         overwrite=overwrite,
         dataset_length=int(cfg.dataset_length),
