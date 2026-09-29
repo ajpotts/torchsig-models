@@ -4,6 +4,8 @@ from typing import Dict
 import torch
 from torch import nn
 
+from torchsig_models.utils.normalization import NormalizationMode
+
 from .modules import create_detr
 
 __all__ = [
@@ -54,6 +56,11 @@ def detr_b0_nano(
     drop_rate_backbone: float = 0.2,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B0 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -81,6 +88,11 @@ def detr_b0_nano(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(mdl, path=path, model_name="detr_b0_nano")
@@ -99,6 +111,11 @@ def detr_b2_nano(
     drop_rate_backbone: float = 0.3,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B2 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -126,6 +143,11 @@ def detr_b2_nano(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(mdl, path=path, model_name="detr_b2_nano")
@@ -144,6 +166,11 @@ def detr_b4_nano(
     drop_rate_backbone: float = 0.4,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B4 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -171,6 +198,11 @@ def detr_b4_nano(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(mdl, path=path, model_name="detr_b4_nano")
@@ -189,6 +221,11 @@ def detr_b0_nano_mod_family(
     drop_rate_backbone: float = 0.2,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B0 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -216,6 +253,11 @@ def detr_b0_nano_mod_family(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(
@@ -236,6 +278,11 @@ def detr_b2_nano_mod_family(
     drop_rate_backbone: float = 0.3,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B2 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -263,6 +310,11 @@ def detr_b2_nano_mod_family(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(
@@ -283,6 +335,11 @@ def detr_b4_nano_mod_family(
     drop_rate_backbone: float = 0.4,
     drop_path_rate_backbone: float = 0.2,
     drop_path_rate_transformer: float = 0.1,
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ):
     """Constructs a DETR architecture with an EfficientNet-B4 backbone and an XCiT-Nano transformer.
     DETR from `"End-to-End Object Detection with Transformers" <https://arxiv.org/pdf/2005.12872.pdf>`_.
@@ -310,6 +367,11 @@ def detr_b4_nano_mod_family(
         drop_path_rate_transformer=drop_path_rate_transformer,
         ds_rate_transformer=2,
         ds_method_transformer="chunker",
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     if pretrained:
         _load_pretrained_weights(

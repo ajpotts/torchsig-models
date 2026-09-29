@@ -12,6 +12,7 @@ import torch
 import yaml
 
 import torchsig_models.models.spectrogram_models.detr.detr_train as training_module
+import torchsig_models.models.spectrogram_models.detr.detr_inference as inference_module
 from torchsig_models.models.spectrogram_models.detr.detr_inference import (
     _infer_num_classes,
     _strip_lightning_prefix,
@@ -36,6 +37,7 @@ def test_detr_collate_preserves_multiple_signals() -> None:
     images, targets = detr_collate(batch)
 
     assert images.shape == (2, 2, 8, 8)
+    assert torch.equal(images[0], torch.ones(2, 8, 8))
     assert targets[0]["labels"].tolist() == [0, 2]
     assert targets[0]["boxes"].shape == (2, 4)
     assert targets[1]["labels"].shape == (0,)
@@ -87,6 +89,64 @@ def test_postprocess_rejects_invalid_threshold() -> None:
         postprocess_detections({}, confidence_threshold=1.1)
 
 
+def test_inference_restores_dataset_normalization_from_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checkpoint_path = tmp_path / "model.ckpt"
+    torch.save(
+        {
+            "state_dict": {
+                "model.linear_class.weight": torch.ones(3, 4),
+                "model.backbone.model.normalize.mean": torch.tensor([1.0, 2.0]),
+                "model.backbone.model.normalize.std": torch.tensor([3.0, 4.0]),
+            },
+            "hyper_parameters": {
+                "model_name": "detr_b0_nano",
+                "num_classes": 2,
+                "normalization": {"mode": "dataset", "eps": 1e-5},
+            },
+        },
+        checkpoint_path,
+    )
+    model = MagicMock()
+    model_factory = MagicMock(return_value=model)
+    monkeypatch.setitem(inference_module.MODEL_FACTORY, "detr_b0_nano", model_factory)
+    monkeypatch.setattr(
+        inference_module,
+        "prepare_torchsig_inference_dataset",
+        MagicMock(return_value=[]),
+    )
+
+    assert inference_module.detr_inference(tmp_path, checkpoint_path) == []
+
+    model_call = model_factory.call_args.kwargs
+    assert model_call["normalization"] == "dataset"
+    assert model_call["normalization_eps"] == pytest.approx(1e-5)
+    assert torch.equal(model_call["normalization_mean"], torch.tensor([1.0, 2.0]))
+    assert torch.equal(model_call["normalization_std"], torch.tensor([3.0, 4.0]))
+
+
+def test_inference_uses_sample_normalization_for_legacy_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checkpoint_path = tmp_path / "legacy.ckpt"
+    torch.save(
+        {"state_dict": {"model.linear_class.weight": torch.ones(2, 4)}},
+        checkpoint_path,
+    )
+    model_factory = MagicMock(return_value=MagicMock())
+    monkeypatch.setitem(inference_module.MODEL_FACTORY, "detr_b0_nano", model_factory)
+    monkeypatch.setattr(
+        inference_module,
+        "prepare_torchsig_inference_dataset",
+        MagicMock(return_value=[]),
+    )
+
+    inference_module.detr_inference(tmp_path, checkpoint_path)
+
+    assert model_factory.call_args.kwargs["normalization"] == "sample"
+
+
 def test_train_detr_uses_warn_only_determinism(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -95,6 +155,14 @@ def test_train_detr_uses_warn_only_determinism(
         training_module, "prepare_torchsig_datasets", MagicMock(return_value=loaders)
     )
     monkeypatch.setattr(training_module, "set_deterministic", MagicMock())
+    normalization_stats = MagicMock(
+        return_value=(torch.tensor([1.0, 1.0]), torch.tensor([2.0, 2.0]))
+    )
+    monkeypatch.setattr(
+        training_module,
+        "compute_dataset_channel_stats",
+        normalization_stats,
+    )
     monkeypatch.setattr(
         training_module,
         "_spectrogram_transforms",
@@ -128,3 +196,8 @@ def test_train_detr_uses_warn_only_determinism(
     )
 
     assert trainer_factory.call_args.kwargs["deterministic"] == "warn"
+    normalization_stats.assert_called_once_with(loaders[0])
+    model_call = training_module.MODEL_FACTORY["detr_b0_nano"].call_args.kwargs
+    assert model_call["normalization"] == "dataset"
+    assert torch.equal(model_call["normalization_mean"], torch.tensor([1.0, 1.0]))
+    assert torch.equal(model_call["normalization_std"], torch.tensor([2.0, 2.0]))

@@ -10,6 +10,7 @@ import torchsig_models.models.spectrogram_models.detr.detr as detr_module
 from torchsig_models.models.spectrogram_models.detr import detr_b0_nano
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import (
     NormalizedModel,
+    SpectrogramNormalization,
 )
 from torchsig_models.models.spectrogram_models.detr.utils import (
     format_preds,
@@ -33,6 +34,13 @@ def test_detr_b0_nano_forward_preserves_batch_dimension(batch_size: int) -> None
     )
     assert torch.all((0 <= output["pred_boxes"]) & (output["pred_boxes"] <= 1))
     assert isinstance(model.backbone.model, NormalizedModel)
+
+
+def test_detr_supports_efficientnet_sample_normalization() -> None:
+    model = detr_b0_nano(num_classes=3, normalization="sample")
+
+    assert model.backbone.model.normalization_mode == "sample"
+    assert isinstance(model.backbone.model.normalize, SpectrogramNormalization)
 
 
 @pytest.mark.parametrize(
