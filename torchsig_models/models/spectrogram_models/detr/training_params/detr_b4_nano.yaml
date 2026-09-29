@@ -1,0 +1,13 @@
+experiment_name: spectrogram_wideband_detection
+model_name: detr_b4_nano
+batch_size: 4
+max_epochs: 30
+learning_rate: 0.0001
+weight_decay: 0.0001
+drop_rate_backbone: 0.4
+drop_path_rate_backbone: 0.2
+drop_path_rate_transformer: 0.1
+class_loss_coef: 1.0
+bbox_loss_coef: 5.0
+giou_loss_coef: 2.0
+eos_coef: 0.1

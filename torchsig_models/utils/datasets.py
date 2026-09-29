@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -114,6 +115,7 @@ def _create_static_dataset(
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
     storage_backend: StorageBackend | None = None,
+    target_labels: list[str] | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
@@ -153,10 +155,10 @@ def _create_static_dataset(
     static_dataset = StaticTorchSigDataset(
         root=str(split_root),
         file_handler_class=file_reader,
-        target_labels=getattr(
-            cfg,
-            "target_labels",
-            ["class_index"],
+        target_labels=(
+            target_labels
+            if target_labels is not None
+            else getattr(cfg, "target_labels", ["class_index"])
         ),
     )
 
@@ -186,6 +188,7 @@ def _load_existing_dataset(
     root: Path,
     file_reader: type[FileReader] | None,
     storage_backend: StorageBackend | None = None,
+    target_labels: list[str] | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Load and validate an existing static dataset without modifying it."""
     split_description = "validation" if split == "val" else split
@@ -201,7 +204,11 @@ def _load_existing_dataset(
         dataset = StaticTorchSigDataset(
             root=str(root),
             file_handler_class=configured_reader,
-            target_labels=getattr(cfg, "target_labels", ["class_index"]),
+            target_labels=(
+                target_labels
+                if target_labels is not None
+                else getattr(cfg, "target_labels", ["class_index"])
+            ),
         )
     except (OSError, ValueError, KeyError) as error:
         raise ValueError(
@@ -311,6 +318,8 @@ def prepare_torchsig_datasets(
     file_handler_options: dict[str, Any] | None = None,
     dataset_mode: DatasetMode = "auto",
     storage_backend: StorageBackend | None = None,
+    target_labels: list[str] | None = None,
+    collate_fn: Callable[[list[Any]], Any] | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -360,6 +369,11 @@ def prepare_torchsig_datasets(
             split is deterministically limited to its configured
             ``dataset_length`` using that split's seed; requests larger than a
             split retain all available samples.
+        target_labels: Optional metadata labels returned by each static
+            dataset. This is useful for detection datasets whose targets are
+            object lists rather than one class index.
+        collate_fn: Optional function used to collate samples in all returned
+            dataloaders.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -400,7 +414,14 @@ def prepare_torchsig_datasets(
         existing_roots = _existing_split_roots(dataset_root, configs)
     if existing_roots is not None:
         loaded = tuple(
-            _load_existing_dataset(cfg, split, split_root, file_reader, storage_backend)
+            _load_existing_dataset(
+                cfg,
+                split,
+                split_root,
+                file_reader,
+                storage_backend,
+                target_labels,
+            )
             for cfg, split, split_root in zip(
                 configs, split_names, existing_roots, strict=True
             )
@@ -429,6 +450,7 @@ def prepare_torchsig_datasets(
                 file_reader=file_reader,
                 file_handler_options=file_handler_options,
                 storage_backend=storage_backend,
+                target_labels=target_labels,
             )
             for cfg, split in zip(configs, split_names, strict=True)
         )
@@ -446,6 +468,7 @@ def prepare_torchsig_datasets(
             generator=_loader_generator(train_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
+            collate_fn=collate_fn,
         ),
         WorkerSeedingDataLoader(
             val_dataset,
@@ -456,6 +479,7 @@ def prepare_torchsig_datasets(
             generator=_loader_generator(val_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
+            collate_fn=collate_fn,
         ),
         WorkerSeedingDataLoader(
             test_dataset,
@@ -466,6 +490,7 @@ def prepare_torchsig_datasets(
             generator=_loader_generator(test_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
+            collate_fn=collate_fn,
         ),
         {"root": str(root), "class_names": class_names},
     )
@@ -478,6 +503,7 @@ def prepare_torchsig_inference_dataset(
     num_workers: int = 8,
     target_labels: list[str] | None = None,
     pin_memory: bool | None = None,
+    collate_fn: Callable[[list[Any]], Any] | None = None,
 ) -> torch.utils.data.DataLoader:
     """Load a static TorchSig dataset for inference.
 
@@ -489,6 +515,7 @@ def prepare_torchsig_inference_dataset(
             ``["class_index"]``.
         pin_memory: Whether the dataloader should pin memory. If omitted,
             pinning is enabled when CUDA is available.
+        collate_fn: Optional function used to collate inference samples.
 
     Returns:
         Dataloader for the static inference dataset.
@@ -512,10 +539,13 @@ def prepare_torchsig_inference_dataset(
         target_labels=target_labels,
     )
 
-    return WorkerSeedingDataLoader(
-        dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        shuffle=False,
-        pin_memory=pin_memory,
-    )
+    loader_kwargs: dict[str, Any] = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "shuffle": False,
+        "pin_memory": pin_memory,
+    }
+    if collate_fn is not None:
+        loader_kwargs["collate_fn"] = collate_fn
+
+    return WorkerSeedingDataLoader(dataset, **loader_kwargs)
