@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -26,6 +27,7 @@ def test_detr_b0_nano_forward_preserves_batch_dimension(batch_size: int) -> None
         output = model(torch.randn(batch_size, 2, 128, 128))
 
     assert output["pred_logits"].shape[0] == batch_size
+    assert output["pred_logits"].shape[1] == 100
     assert output["pred_logits"].shape[-1] == 4
     assert output["pred_boxes"].shape == (
         batch_size,
@@ -73,6 +75,30 @@ def test_factory_includes_no_object_class(
 
     assert default_out_features == default_num_classes + 1
     assert custom_out_features == 5
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    [
+        "detr_b0_nano",
+        "detr_b2_nano",
+        "detr_b4_nano",
+        "detr_b0_nano_mod_family",
+        "detr_b2_nano_mod_family",
+        "detr_b4_nano_mod_family",
+    ],
+)
+def test_factory_defaults_to_100_object_queries(
+    monkeypatch: pytest.MonkeyPatch, factory_name: str
+) -> None:
+    create_detr = MagicMock(
+        return_value=SimpleNamespace(linear_class=nn.Linear(8, 2))
+    )
+    monkeypatch.setattr(detr_module, "create_detr", create_detr)
+
+    getattr(detr_module, factory_name)()
+
+    assert create_detr.call_args.kwargs["num_objects"] == 100
 
 
 def test_b4_mod_family_uses_matching_pretrained_checkpoint(

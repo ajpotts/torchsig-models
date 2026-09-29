@@ -1,5 +1,6 @@
 experiment_name: spectrogram_wideband_detection
 model_name: detr_b4_nano
+num_objects: 100
 normalization: dataset
 normalization_eps: 1.0e-6
 batch_size: 4
