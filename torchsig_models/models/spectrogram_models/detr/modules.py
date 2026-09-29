@@ -17,6 +17,7 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import (
     NormalizedModel,
 )
+from torchsig_models.utils.normalization import NormalizationMode
 
 from .criterion import dice_loss, nested_tensor_from_tensor_list
 from .utils import (
@@ -520,15 +521,34 @@ def create_detr(
     drop_path_rate_transformer: float = 0.1,
     ds_rate_transformer: int = 2,
     ds_method_transformer: str = "chunker",
+    normalization: NormalizationMode | None = "none",
+    normalization_mean: torch.Tensor | list[float] | None = None,
+    normalization_std: torch.Tensor | list[float] | None = None,
+    normalization_eps: float = 1e-6,
+    normalize: bool | None = None,
 ) -> torch.nn.Module:
-    """
-    Function used to build a DETR network
+    """Build a DETR network with an EfficientNet spectrogram backbone.
 
     Args:
-        TODO
+        backbone: EfficientNet backbone factory name.
+        transformer: XCiT transformer variant.
+        num_classes: Number of foreground classes.
+        num_objects: Maximum number of object queries.
+        hidden_dim: DETR embedding dimension.
+        drop_rate_backbone: EfficientNet dropout rate.
+        drop_path_rate_backbone: EfficientNet stochastic-depth rate.
+        drop_path_rate_transformer: XCiT stochastic-depth rate.
+        ds_rate_transformer: Transformer input downsampling rate.
+        ds_method_transformer: Transformer input downsampling method.
+        normalization: ``"dataset"``, ``"sample"``, or ``"none"``.
+        normalization_mean: Per-channel mean required by dataset normalization.
+        normalization_std: Per-channel standard deviation required by dataset
+            normalization.
+        normalization_eps: Numerical stability term used by normalization.
+        normalize: Deprecated boolean alias for sample normalization.
 
     Returns:
-        torch.nn.Module
+        The configured DETR model.
 
     """
     # Build the backbone through the TorchSIG Models API so its checkpoint
@@ -545,7 +565,11 @@ def create_detr(
         input_channels=2,
         drop_rate=drop_rate_backbone,
         drop_path_rate=drop_path_rate_backbone,
-        normalize=False,
+        normalization=normalization,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        normalization_eps=normalization_eps,
+        normalize=normalize,
     )
     backbone_arch = EfficientNetBackbone(backbone_model)
 

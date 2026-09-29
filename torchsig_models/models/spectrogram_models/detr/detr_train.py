@@ -26,10 +26,11 @@ from torchsig_models.models.spectrogram_models.detr import (
     detr_b4_nano,
 )
 from torchsig_models.models.spectrogram_models.detr.modules import SetCriterion
-from torchsig_models.models.spectrogram_models.efficientnet.efficientnet import (
-    SpectrogramNormalization,
-)
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.normalization import (
+    compute_dataset_channel_stats,
+    resolve_normalization_mode,
+)
 from torchsig_models.utils.training import compute_num_params, set_deterministic
 
 DETRModelName = Literal["detr_b0_nano", "detr_b2_nano", "detr_b4_nano"]
@@ -103,7 +104,6 @@ def detr_collate(
     """
     images, yolo_targets = zip(*batch)
     image_batch = torch.stack([_image_tensor(image) for image in images])
-    image_batch = SpectrogramNormalization()(image_batch)
 
     targets: list[dict[str, torch.Tensor]] = []
     for objects in yolo_targets:
@@ -145,6 +145,7 @@ class DETRDetector(pl.LightningModule):
         model_name: str | None = None,
         class_names: list[str] | None = None,
         model_params: dict[str, Any] | None = None,
+        normalization: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
         self.model = model
@@ -238,13 +239,42 @@ def train_detr(
     train_loader, val_loader, test_loader, data_info = loaders
     class_names = data_info["class_names"]
     num_classes = len(class_names)
+    normalization_mode = resolve_normalization_mode(
+        params.get("normalization"),
+        params.get("normalize"),
+    )
+    normalization_eps = float(params.get("normalization_eps", 1e-6))
+    normalization_kwargs: dict[str, Any] = {
+        "normalization": normalization_mode,
+        "normalization_eps": normalization_eps,
+    }
+    normalization_metadata: dict[str, Any] = {
+        "mode": normalization_mode,
+        "eps": normalization_eps,
+    }
+    if normalization_mode == "dataset":
+        normalization_mean, normalization_std = compute_dataset_channel_stats(
+            train_loader
+        )
+        normalization_kwargs.update(
+            normalization_mean=normalization_mean,
+            normalization_std=normalization_std,
+        )
+        normalization_metadata.update(
+            mean=normalization_mean.tolist(),
+            std=normalization_std.tolist(),
+        )
     model_params = {
         "drop_rate_backbone": params.get("drop_rate_backbone", 0.2),
         "drop_path_rate_backbone": params.get("drop_path_rate_backbone", 0.2),
         "drop_path_rate_transformer": params.get("drop_path_rate_transformer", 0.1),
     }
     detector = DETRDetector(
-        MODEL_FACTORY[model_name](num_classes=num_classes, **model_params),
+        MODEL_FACTORY[model_name](
+            num_classes=num_classes,
+            **model_params,
+            **normalization_kwargs,
+        ),
         num_classes=num_classes,
         learning_rate=float(params["learning_rate"]),
         weight_decay=float(params["weight_decay"]),
@@ -256,6 +286,7 @@ def train_detr(
         model_name=model_name,
         class_names=class_names,
         model_params=model_params,
+        normalization=normalization_metadata,
     )
     checkpoint = ModelCheckpoint(
         dirpath=checkpoint_dir,
@@ -292,6 +323,7 @@ def train_detr(
         "val_loader": val_loader,
         "test_loader": test_loader,
         "best_checkpoint": checkpoint.best_model_path,
+        "normalization": normalization_metadata,
     }
 
 

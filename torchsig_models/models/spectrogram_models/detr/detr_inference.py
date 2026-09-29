@@ -14,6 +14,11 @@ from torchsig_models.models.spectrogram_models.detr.detr_train import (
     detr_collate,
 )
 from torchsig_models.utils.datasets import prepare_torchsig_inference_dataset
+from torchsig_models.utils.normalization import (
+    NormalizationMode,
+    normalization_from_state_dict,
+    resolve_checkpoint_normalization_mode,
+)
 
 __all__ = ["detr_inference", "postprocess_detections"]
 
@@ -75,14 +80,37 @@ def detr_inference(
     model_name: DETRModelName | None = None,
     confidence_threshold: float = 0.5,
     output_path: str | Path | None = None,
+    normalization: NormalizationMode | None = None,
 ) -> list[dict[str, torch.Tensor]]:
-    """Run DETR over a static TorchSig dataset and return every detection."""
+    """Run DETR over a static TorchSig dataset and return every detection.
+
+    The checkpoint's normalization metadata is used by default. Set
+    ``normalization`` to explicitly override it; legacy DETR checkpoints fall
+    back to the per-sample normalization used by the former collate function.
+    """
     root, checkpoint_path = Path(root), Path(checkpoint_path)
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     state_dict = _strip_lightning_prefix(checkpoint.get("state_dict", checkpoint))
+    resolved_normalization = resolve_checkpoint_normalization_mode(
+        checkpoint,
+        normalization,
+    )
+    hyperparameters = checkpoint.get("hyper_parameters", {})
+    normalization_metadata = hyperparameters.get("normalization", {})
+    normalization_eps = (
+        float(normalization_metadata.get("eps", 1e-6))
+        if isinstance(normalization_metadata, dict)
+        else 1e-6
+    )
+    normalization_kwargs = normalization_from_state_dict(
+        state_dict,
+        resolved_normalization,
+        legacy_mode="sample",
+        eps=normalization_eps,
+    )
     stored_model_name, stored_num_classes, model_params = _checkpoint_metadata(checkpoint)
     resolved_model_name = model_name or stored_model_name or "detr_b0_nano"
     if resolved_model_name not in MODEL_FACTORY:
@@ -95,7 +123,9 @@ def detr_inference(
             f"({inferred_num_classes})."
         )
     model = MODEL_FACTORY[resolved_model_name](
-        num_classes=int(resolved_num_classes), **model_params
+        num_classes=int(resolved_num_classes),
+        **model_params,
+        **normalization_kwargs,
     )
     model.load_state_dict(state_dict, strict=True)
     model.to(device).eval()
@@ -129,6 +159,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--confidence-threshold", type=float, default=0.5)
+    parser.add_argument("--normalization", choices=["dataset", "sample", "none"])
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -144,5 +175,6 @@ if __name__ == "__main__":
         model_name=args.model,
         confidence_threshold=args.confidence_threshold,
         output_path=args.output,
+        normalization=args.normalization,
     )
     print(f"Processed {len(detections)} examples with {sum(len(x['labels']) for x in detections)} detections.")
