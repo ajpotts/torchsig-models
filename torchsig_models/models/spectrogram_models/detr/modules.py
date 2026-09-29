@@ -104,7 +104,7 @@ class Chunker(torch.nn.Module):
         return X
 
 class XCiT(torch.nn.Module):
-    def __init__(self, backbone, in_chans=2, num_objects=50, ds_rate=2, ds_method="downsample"):
+    def __init__(self, backbone, in_chans=2, num_objects=100, ds_rate=2, ds_method="downsample"):
         super().__init__()
         self.backbone = backbone
         self.num_objects = num_objects
@@ -135,7 +135,17 @@ class XCiT(torch.nn.Module):
         for blk in mdl.cls_attn_blocks:
             x = blk(x)
         x = mdl.norm(x)
-        x = self.grouper(x.transpose(1, 2)[:, :, :self.num_objects])
+        x = x.transpose(1, 2)
+        if x.shape[-1] < self.num_objects:
+            x = F.interpolate(
+                x,
+                size=self.num_objects,
+                mode="linear",
+                align_corners=False,
+            )
+        else:
+            x = x[:, :, :self.num_objects]
+        x = self.grouper(x)
         x = x.transpose(1, 2)
         return x
 
@@ -163,7 +173,7 @@ class DETRModel(torch.nn.Module):
         backbone: torch.nn.Module,
         transformer: torch.nn.Module,
         num_classes: int = 53,
-        num_objects: int = 50,
+        num_objects: int = 100,
         hidden_dim: int = 256,
     ):
         super().__init__()
@@ -514,7 +524,7 @@ def create_detr(
     backbone: str = "efficientnet_b0",
     transformer: str = "xcit-nano",
     num_classes: int = 53,
-    num_objects: int = 50,
+    num_objects: int = 100,
     hidden_dim: int = 256,
     drop_rate_backbone: float = 0.2,
     drop_path_rate_backbone: float = 0.2,
