@@ -1,4 +1,5 @@
 import os
+import hashlib
 import pytest
 import torch
 from torch.utils.data import DataLoader, random_split
@@ -62,10 +63,6 @@ def pytest_collection_modifyitems(config, items):
 # ==============================================================
 # Test constants
 # ==============================================================
-DATASET_LENGTH = 100  # Small dataset for testing
-SEED = 42
-
-
 @pytest.fixture(scope="session")
 def class_names():
     return TorchSigSignalLists.all_signals
@@ -80,14 +77,17 @@ def narrowband_config():
 
 
 @pytest.fixture(scope="session")
-def narrowband_data_dir():
+def narrowband_data_dir(narrowband_config):
+    dataset_length = int(narrowband_config["dataset_length"])
+    seed = int(narrowband_config["seed"])
+    config_signature = hashlib.sha1(
+        yaml.safe_dump(narrowband_config, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
     cache_root = Path(
         os.environ.get("TORCHSIG_TEST_DATA_CACHE", ".pytest_cache/torchsig_data")
     )
-    data_dir = cache_root / f"narrowband_len{DATASET_LENGTH}_seed{SEED}"
+    data_dir = cache_root / f"narrowband_{config_signature}"
 
-    train_dir = data_dir / "train"
-    val_dir = data_dir / "val"
     sentinel = data_dir / ".complete"
 
     def cache_is_complete() -> bool:
@@ -102,7 +102,7 @@ def narrowband_data_dir():
                         target_labels=["class_index"],
                     )
                 )
-                == DATASET_LENGTH
+                == dataset_length
             )
         except (FileNotFoundError, OSError, KeyError, RuntimeError):
             return False
@@ -116,28 +116,12 @@ def narrowband_data_dir():
     if data_dir.exists():
         shutil.rmtree(data_dir)
 
-    train_dir.mkdir(parents=True)
-    val_dir.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
 
     base = TorchSigDefaults().default_dataset_metadata
     dataset_metadata = {
         **base,
-        "num_iq_samples_dataset": 256**2,
-        "fft_size": 256,
-        "fft_stride": 256,
-        "num_signals_max": 1,
-        "num_signals_min": 1,
-        "noise_level": 0.0,
-        "signal_center_freq_min": 1e3,
-        "signal_center_freq_max": 2e3,
-        "sample_rate": 1e4,
-        "frequency_min": 1e3,
-        "frequency_max": 2e3,
-        "cochannel_overlap_probability": 0.0,
-        "signal_duration_in_samples_min": 2000,
-        "signal_duration_in_samples_max": 8000,
-        "bandwidth_min": 1000,
-        "bandwidth_max": 2000,
+        **narrowband_config["dataset_metadata"],
     }
 
     ds = TorchSigIterableDataset(
@@ -150,20 +134,17 @@ def narrowband_data_dir():
         ds,
         collate_fn=default_collate,
         batch_size=16,
+        seed=seed,
     )
-    dl.seed(SEED)
+    dl.seed(seed)
 
-    for root, length in [
-        (train_dir, DATASET_LENGTH // 2),
-        (val_dir, DATASET_LENGTH // 2),
-    ]:
-        dc = DatasetCreator(
-            dataloader=dl,
-            root=data_dir,
-            dataset_length=DATASET_LENGTH,
-            overwrite=True,
-        )
-        dc.create()
+    dc = DatasetCreator(
+        dataloader=dl,
+        root=data_dir,
+        dataset_length=dataset_length,
+        overwrite=True,
+    )
+    dc.create()
 
     sentinel.write_text("ok\n")
 
@@ -176,7 +157,7 @@ def narrowband_data_dir():
 
 
 @pytest.fixture(scope="session")
-def narrowband_dataloaders(narrowband_data_dir):
+def narrowband_dataloaders(narrowband_data_dir, narrowband_config):
     dataset = StaticTorchSigDataset(
         root=str(narrowband_data_dir),
         target_labels=["class_index"],
@@ -188,7 +169,7 @@ def narrowband_dataloaders(narrowband_data_dir):
     train_dataset, val_dataset = random_split(
         dataset,
         [train_len, val_len],
-        generator=torch.Generator().manual_seed(SEED),
+        generator=torch.Generator().manual_seed(int(narrowband_config["seed"])),
     )
 
     train_loader = DataLoader(train_dataset, batch_size=4)

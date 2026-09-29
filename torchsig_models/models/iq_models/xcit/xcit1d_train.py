@@ -107,5 +107,5 @@ def xcit1d_trainer(root, config_file, pt_dir, metrics_dir, num_epochs) -> None:
     trainer.fit(model, datamodule=dm)
     trainer.save_checkpoint(str(pt_dir) + "/classification_model_final.ckpt")
 
-    metrics.plot()
+    metrics.plot(show=False, close=True)
     metrics.save_to_csv()
