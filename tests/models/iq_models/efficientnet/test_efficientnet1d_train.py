@@ -30,6 +30,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         "drop_path": 0.1,
         "drop_rate": 0.2,
         "label_smoothing": 0.05,
+        "normalization": "none",
     }
     train_loader, val_loader, test_loader = [object()], [object()], [object()]
     data_info = {"root": "dataset", "class_names": ["a", "b", "c"]}
@@ -88,6 +89,8 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         drop_path_rate=0.1,
         drop_rate=0.2,
         class_names=["a", "b", "c"],
+        normalization="none",
+        normalization_eps=1e-6,
     )
 
     training_call = train_validate.call_args.kwargs

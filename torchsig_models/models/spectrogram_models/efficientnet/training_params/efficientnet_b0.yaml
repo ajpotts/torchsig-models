@@ -1,6 +1,7 @@
 experiment_name: spectrogram_narrowband
 model_name: efficientnet_b0
-normalize: false
+normalization: dataset
+normalization_eps: 1.0e-6
 batch_size: 32
 max_epochs: 30
 learning_rate: 0.001

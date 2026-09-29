@@ -117,6 +117,8 @@ def test_create_static_dataset_creates_dataset(
 
     dataloader_cls.assert_called_once()
     assert dataloader_cls.call_args.kwargs["batch_size"] == 8
+    assert dataloader_cls.call_args.kwargs["seed"] == 123
+    dataloader_cls.return_value.seed.assert_called_once_with(123)
 
     dataset_creator_cls.assert_called_once()
     assert dataset_creator_cls.call_args.kwargs["root"] == str(tmp_path / "train")
@@ -270,8 +272,6 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
         )
 
     assert (root / cfg.dataset_id).exists()
-
-
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 @patch("torchsig_models.utils.datasets.DatasetCreator")
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
