@@ -1,6 +1,6 @@
 experiment_name: detr_b0_nano_hyperparameter_search
-direction: minimize
-metric_name: val_loss
+direction: maximize
+metric_name: val_map_50
 n_trials: 20
 
 search_space:
@@ -28,8 +28,8 @@ search_space:
     high: 0.3
   eos_coef:
     type: float
-    low: 0.05
-    high: 0.5
+    low: 0.01
+    high: 0.15
   batch_size:
     type: categorical
     choices: [4, 8, 16]
