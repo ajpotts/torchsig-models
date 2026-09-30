@@ -244,13 +244,19 @@ def test_train_detr_uses_warn_only_determinism(
     checkpoint = SimpleNamespace(best_model_path="best.ckpt")
     monkeypatch.setattr(training_module, "ModelCheckpoint", MagicMock(return_value=checkpoint))
     trainer = MagicMock()
-    trainer.callback_metrics = {"val_loss": torch.tensor(1.0)}
+    trainer.callback_metrics = {
+        "val_loss": torch.tensor(1.0),
+        "val_map": torch.tensor(0.2),
+        "val_map_50": torch.tensor(0.3),
+        "val_precision": torch.tensor(0.4),
+        "val_recall": torch.tensor(0.5),
+    }
     trainer.test.return_value = [{"test_loss": 1.25}]
     trainer_factory = MagicMock(return_value=trainer)
     monkeypatch.setattr(training_module.pl, "Trainer", trainer_factory)
     cfg = SimpleNamespace(seed=123)
 
-    train_detr(
+    result = train_detr(
         cfg,
         cfg,
         cfg,
@@ -264,6 +270,10 @@ def test_train_detr_uses_warn_only_determinism(
     )
 
     assert trainer_factory.call_args.kwargs["deterministic"] == "warn"
+    checkpoint_call = training_module.ModelCheckpoint.call_args.kwargs
+    assert checkpoint_call["monitor"] == "val_map_50"
+    assert checkpoint_call["mode"] == "max"
+    assert result["val_map_50"] == pytest.approx(0.3)
     normalization_stats.assert_called_once_with(loaders[0])
     model_call = training_module.MODEL_FACTORY["detr_b0_nano"].call_args.kwargs
     assert model_call["normalization"] == "dataset"

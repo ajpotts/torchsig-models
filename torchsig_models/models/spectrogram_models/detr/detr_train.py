@@ -402,9 +402,9 @@ def train_detr(
     )
     checkpoint = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename="{epoch:02d}-{val_loss:.4f}",
-        monitor="val_loss",
-        mode="min",
+        filename="{epoch:02d}-{val_map_50:.4f}",
+        monitor="val_map_50",
+        mode="max",
         save_last=True,
     )
     trainer = pl.Trainer(
@@ -421,6 +421,10 @@ def train_detr(
     )
     trainer.fit(detector, train_loader, val_loader)
     val_loss = float(trainer.callback_metrics["val_loss"].detach().cpu())
+    val_map = float(trainer.callback_metrics["val_map"].detach().cpu())
+    val_map_50 = float(trainer.callback_metrics["val_map_50"].detach().cpu())
+    val_precision = float(trainer.callback_metrics["val_precision"].detach().cpu())
+    val_recall = float(trainer.callback_metrics["val_recall"].detach().cpu())
     test_results = trainer.test(detector, test_loader)
     return {
         "pl_model": detector,
@@ -428,6 +432,10 @@ def train_detr(
         "trainer": trainer,
         "test_results": test_results,
         "val_loss": val_loss,
+        "val_map": val_map,
+        "val_map_50": val_map_50,
+        "val_precision": val_precision,
+        "val_recall": val_recall,
         "num_classes": num_classes,
         "num_params": compute_num_params(detector.model),
         "data_info": data_info,
