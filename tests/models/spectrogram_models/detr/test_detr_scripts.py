@@ -213,6 +213,7 @@ def test_inference_uses_sample_normalization_for_legacy_checkpoint(
     inference_module.detr_inference(tmp_path, checkpoint_path)
 
     assert model_factory.call_args.kwargs["normalization"] == "sample"
+    assert model_factory.call_args.kwargs["learned_object_queries"] is False
 
 
 def test_train_detr_uses_warn_only_determinism(

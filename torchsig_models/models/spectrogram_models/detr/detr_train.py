@@ -377,6 +377,7 @@ def train_detr(
         )
     model_params = {
         "num_objects": int(params.get("num_objects", 100)),
+        "learned_object_queries": bool(params.get("learned_object_queries", True)),
         "drop_rate_backbone": params.get("drop_rate_backbone", 0.2),
         "drop_path_rate_backbone": params.get("drop_path_rate_backbone", 0.2),
         "drop_path_rate_transformer": params.get("drop_path_rate_transformer", 0.1),
