@@ -15,6 +15,7 @@ import yaml
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import Logger
 from torch import nn
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.transforms.metadata_transforms import YOLOLabel
 from torchsig.transforms.transforms import Spectrogram
@@ -26,6 +27,11 @@ from torchsig_models.models.spectrogram_models.detr import (
     detr_b4_nano,
 )
 from torchsig_models.models.spectrogram_models.detr.modules import SetCriterion
+from torchsig_models.models.spectrogram_models.detr.utils import (
+    box_iou,
+    format_preds,
+    format_targets,
+)
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
 from torchsig_models.utils.normalization import (
     compute_dataset_channel_stats,
@@ -127,6 +133,55 @@ def _weighted_loss(
     )
 
 
+def _detection_counts(
+    predictions: list[dict[str, torch.Tensor]],
+    targets: list[dict[str, torch.Tensor]],
+    *,
+    confidence_threshold: float = 0.5,
+    iou_threshold: float = 0.5,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Count class-aware true positives, false positives, and false negatives."""
+    device = predictions[0]["boxes"].device if predictions else torch.device("cpu")
+    true_positives = torch.zeros((), device=device)
+    false_positives = torch.zeros((), device=device)
+    false_negatives = torch.zeros((), device=device)
+
+    for prediction, target in zip(predictions, targets):
+        keep = prediction["scores"] >= confidence_threshold
+        boxes = prediction["boxes"][keep]
+        scores = prediction["scores"][keep]
+        labels = prediction["labels"][keep]
+        target_boxes = target["boxes"]
+        target_labels = target["labels"]
+        matched_targets: set[int] = set()
+
+        for prediction_index in torch.argsort(scores, descending=True).tolist():
+            matching = torch.nonzero(
+                target_labels == labels[prediction_index], as_tuple=False
+            ).flatten()
+            matching = torch.tensor(
+                [index for index in matching.tolist() if index not in matched_targets],
+                device=device,
+                dtype=torch.long,
+            )
+            if matching.numel() == 0:
+                false_positives += 1
+                continue
+            overlaps, _ = box_iou(
+                boxes[prediction_index].unsqueeze(0), target_boxes[matching]
+            )
+            best_overlap, best_index = overlaps[0].max(dim=0)
+            if best_overlap >= iou_threshold:
+                true_positives += 1
+                matched_targets.add(int(matching[best_index].item()))
+            else:
+                false_positives += 1
+
+        false_negatives += len(target_boxes) - len(matched_targets)
+
+    return true_positives, false_positives, false_negatives
+
+
 class DETRDetector(pl.LightningModule):
     """Lightning wrapper for DETR set-based wideband detection."""
 
@@ -159,6 +214,18 @@ class DETRDetector(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.max_epochs = max_epochs
+        self.validation_map = MeanAveragePrecision(box_format="xyxy", iou_type="bbox")
+        self.test_map = MeanAveragePrecision(box_format="xyxy", iou_type="bbox")
+        for stage in ("val", "test"):
+            self.register_buffer(
+                f"{stage}_true_positives", torch.zeros(()), persistent=False
+            )
+            self.register_buffer(
+                f"{stage}_false_positives", torch.zeros(()), persistent=False
+            )
+            self.register_buffer(
+                f"{stage}_false_negatives", torch.zeros(()), persistent=False
+            )
         self.save_hyperparameters(ignore=["model"])
 
     def forward(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -167,7 +234,8 @@ class DETRDetector(pl.LightningModule):
 
     def _step(self, batch: Any, stage: str) -> torch.Tensor:
         images, targets = batch
-        losses = self.criterion(self(images), targets)
+        outputs = self(images)
+        losses = self.criterion(outputs, targets)
         loss = _weighted_loss(losses, self.criterion)
         self.log(
             f"{stage}_loss",
@@ -180,7 +248,50 @@ class DETRDetector(pl.LightningModule):
         for name, value in losses.items():
             if name in self.criterion.weight_dict:
                 self.log(f"{stage}_{name}", value, on_epoch=True, batch_size=images.shape[0])
+        if stage in ("val", "test"):
+            predictions = format_preds(outputs, confidence_threshold=0.0)
+            formatted_targets = format_targets(targets)
+            metric = self.validation_map if stage == "val" else self.test_map
+            metric.update(predictions, formatted_targets)
+            true_positives, false_positives, false_negatives = _detection_counts(
+                predictions, formatted_targets
+            )
+            getattr(self, f"{stage}_true_positives").add_(true_positives)
+            getattr(self, f"{stage}_false_positives").add_(false_positives)
+            getattr(self, f"{stage}_false_negatives").add_(false_negatives)
         return loss
+
+    def _log_detection_metrics(self, stage: Literal["val", "test"]) -> None:
+        """Compute, log, and reset epoch-level detection metrics."""
+        metric = self.validation_map if stage == "val" else self.test_map
+        result = metric.compute()
+        true_positives = getattr(self, f"{stage}_true_positives")
+        false_positives = getattr(self, f"{stage}_false_positives")
+        false_negatives = getattr(self, f"{stage}_false_negatives")
+        precision = true_positives / (true_positives + false_positives).clamp_min(1)
+        recall = true_positives / (true_positives + false_negatives).clamp_min(1)
+        self.log_dict(
+            {
+                f"{stage}_map": result["map"],
+                f"{stage}_map_50": result["map_50"],
+                f"{stage}_precision": precision,
+                f"{stage}_recall": recall,
+            },
+            prog_bar=stage == "test",
+            sync_dist=True,
+        )
+        metric.reset()
+        true_positives.zero_()
+        false_positives.zero_()
+        false_negatives.zero_()
+
+    def on_validation_epoch_end(self) -> None:
+        """Log validation detection metrics accumulated over the epoch."""
+        self._log_detection_metrics("val")
+
+    def on_test_epoch_end(self) -> None:
+        """Log test detection metrics accumulated over the epoch."""
+        self._log_detection_metrics("test")
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Compute one training batch loss."""

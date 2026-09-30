@@ -122,7 +122,8 @@ def generalized_box_iou(boxes1, boxes2):
     return iou - (area - union) / area
 
 
-def format_preds(preds):
+def format_preds(preds, confidence_threshold=0.5):
+    """Convert DETR outputs to the format expected by detection metrics."""
     map_preds = []
     for det_logits, det_boxes in zip(preds["pred_logits"], preds["pred_boxes"]):
         boxes = []
@@ -136,9 +137,10 @@ def format_preds(preds):
 
         for obj_idx in range(pred["pred_logits"].shape[0]):
             probs = pred["pred_logits"][obj_idx].softmax(-1)
-            max_prob = probs.max().detach()
-            max_class = probs.argmax().detach()
-            if max_class != (pred["pred_logits"].shape[1] - 1) and max_prob >= 0.5:
+            max_prob, max_class = probs[:-1].max(dim=0)
+            max_prob = max_prob.detach()
+            max_class = max_class.detach()
+            if max_prob >= confidence_threshold:
                 center_time = pred["pred_boxes"][obj_idx][0]
                 center_freq = pred["pred_boxes"][obj_idx][1]
                 duration = pred["pred_boxes"][obj_idx][2]
