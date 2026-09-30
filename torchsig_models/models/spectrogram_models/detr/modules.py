@@ -104,12 +104,40 @@ class Chunker(torch.nn.Module):
         return X
 
 class XCiT(torch.nn.Module):
-    def __init__(self, backbone, in_chans=2, num_objects=100, ds_rate=2, ds_method="downsample"):
+    def __init__(
+        self,
+        backbone,
+        in_chans=2,
+        num_objects=100,
+        ds_rate=2,
+        ds_method="downsample",
+        learned_object_queries=True,
+    ):
         super().__init__()
         self.backbone = backbone
         self.num_objects = num_objects
+        self.learned_object_queries = learned_object_queries
         W = backbone.num_features
         self.grouper = torch.nn.Conv1d(W, backbone.num_classes, 1)
+        if learned_object_queries:
+            hidden_dim = backbone.num_classes
+            self.query_embed = nn.Embedding(num_objects, hidden_dim)
+            decoder_layer = nn.TransformerDecoderLayer(
+                d_model=hidden_dim,
+                nhead=8,
+                dim_feedforward=hidden_dim * 4,
+                dropout=0.1,
+                batch_first=True,
+                norm_first=True,
+            )
+            self.decoder = nn.TransformerDecoder(
+                decoder_layer,
+                num_layers=3,
+                norm=nn.LayerNorm(hidden_dim),
+            )
+        else:
+            self.query_embed = None
+            self.decoder = None
         if ds_method == "downsample":
             self.backbone.patch_embed = ConvDownSampler(in_chans, W, ds_rate)
         else:
@@ -136,6 +164,10 @@ class XCiT(torch.nn.Module):
             x = blk(x)
         x = mdl.norm(x)
         x = x.transpose(1, 2)
+        if self.learned_object_queries:
+            memory = self.grouper(x).transpose(1, 2)
+            queries = self.query_embed.weight.unsqueeze(0).expand(B, -1, -1)
+            return self.decoder(queries, memory)
         if x.shape[-1] < self.num_objects:
             x = F.interpolate(
                 x,
@@ -536,6 +568,7 @@ def create_detr(
     normalization_std: torch.Tensor | list[float] | None = None,
     normalization_eps: float = 1e-6,
     normalize: bool | None = None,
+    learned_object_queries: bool = True,
 ) -> torch.nn.Module:
     """Build a DETR network with an EfficientNet spectrogram backbone.
 
@@ -556,6 +589,8 @@ def create_detr(
             normalization.
         normalization_eps: Numerical stability term used by normalization.
         normalize: Deprecated boolean alias for sample normalization.
+        learned_object_queries: Use learned queries and cross-attention. Set to
+            false only to load legacy token-query checkpoints.
 
     Returns:
         The configured DETR model.
@@ -600,6 +635,7 @@ def create_detr(
             num_objects=num_objects,
             ds_rate=ds_rate_transformer,
             ds_method=ds_method_transformer,
+            learned_object_queries=learned_object_queries,
         )
 
     else:

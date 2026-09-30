@@ -45,6 +45,14 @@ def test_detr_supports_efficientnet_sample_normalization() -> None:
     assert isinstance(model.backbone.model.normalize, SpectrogramNormalization)
 
 
+def test_detr_uses_learned_object_queries() -> None:
+    model = detr_b0_nano(num_classes=3)
+
+    assert model.transformer.learned_object_queries
+    assert model.transformer.query_embed.num_embeddings == 100
+    assert isinstance(model.transformer.decoder, nn.TransformerDecoder)
+
+
 @pytest.mark.parametrize(
     ("factory_name", "default_num_classes"),
     [

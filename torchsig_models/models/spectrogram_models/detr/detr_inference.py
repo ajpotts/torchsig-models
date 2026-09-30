@@ -112,6 +112,13 @@ def detr_inference(
         eps=normalization_eps,
     )
     stored_model_name, stored_num_classes, model_params = _checkpoint_metadata(checkpoint)
+    if "learned_object_queries" not in model_params:
+        model_params = {
+            **model_params,
+            "learned_object_queries": any(
+                key.endswith("transformer.query_embed.weight") for key in state_dict
+            ),
+        }
     resolved_model_name = model_name or stored_model_name or "detr_b0_nano"
     if resolved_model_name not in MODEL_FACTORY:
         raise ValueError(f"Unsupported DETR model in checkpoint: {resolved_model_name}")
