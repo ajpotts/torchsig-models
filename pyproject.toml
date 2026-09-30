@@ -53,7 +53,7 @@ dependencies = [
     # baseline torchsig installation
     "torchsig>=2.1.1,<3.0",
     # additional packages
-    "torchmetrics>=1.0",
+    "torchmetrics[detection]>=1.0",
     "timm>=0.9",
     "tensorboardX>=2.6",
     "ultralytics>=8.4",

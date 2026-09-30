@@ -19,10 +19,74 @@ from torchsig_models.models.spectrogram_models.detr.detr_inference import (
     postprocess_detections,
 )
 from torchsig_models.models.spectrogram_models.detr.detr_train import (
+    DETRDetector,
+    _detection_counts,
     detr_collate,
     load_training_params,
     train_detr,
 )
+
+
+def test_detection_counts_are_class_and_iou_aware() -> None:
+    predictions = [
+        {
+            "boxes": torch.tensor(
+                [[0.0, 0.0, 10.0, 10.0], [20.0, 20.0, 30.0, 30.0]]
+            ),
+            "scores": torch.tensor([0.9, 0.8]),
+            "labels": torch.tensor([1, 0]),
+        }
+    ]
+    targets = [
+        {
+            "boxes": torch.tensor(
+                [[0.0, 0.0, 10.0, 10.0], [40.0, 40.0, 50.0, 50.0]]
+            ),
+            "labels": torch.tensor([1, 0]),
+        }
+    ]
+
+    true_positives, false_positives, false_negatives = _detection_counts(
+        predictions, targets
+    )
+
+    assert true_positives.item() == 1
+    assert false_positives.item() == 1
+    assert false_negatives.item() == 1
+
+
+def test_detector_logs_test_detection_metrics() -> None:
+    detector = DETRDetector(
+        torch.nn.Identity(),
+        num_classes=1,
+        learning_rate=1e-4,
+        weight_decay=1e-4,
+        max_epochs=1,
+    )
+    predictions = [
+        {
+            "boxes": torch.tensor([[0.0, 0.0, 10.0, 10.0]]),
+            "scores": torch.tensor([0.9]),
+            "labels": torch.tensor([0]),
+        }
+    ]
+    targets = [
+        {
+            "boxes": torch.tensor([[0.0, 0.0, 10.0, 10.0]]),
+            "labels": torch.tensor([0]),
+        }
+    ]
+    detector.test_map.update(predictions, targets)
+    detector.test_true_positives.add_(1)
+    detector.log_dict = MagicMock()  # type: ignore[method-assign]
+
+    detector.on_test_epoch_end()
+
+    logged = detector.log_dict.call_args.args[0]
+    assert logged["test_map"].item() == pytest.approx(1.0)
+    assert logged["test_map_50"].item() == pytest.approx(1.0)
+    assert logged["test_precision"].item() == pytest.approx(1.0)
+    assert logged["test_recall"].item() == pytest.approx(1.0)
 
 
 def test_detr_collate_preserves_multiple_signals() -> None:
@@ -122,8 +186,12 @@ def test_inference_restores_dataset_normalization_from_checkpoint(
     model_call = model_factory.call_args.kwargs
     assert model_call["normalization"] == "dataset"
     assert model_call["normalization_eps"] == pytest.approx(1e-5)
-    assert torch.equal(model_call["normalization_mean"], torch.tensor([1.0, 2.0]))
-    assert torch.equal(model_call["normalization_std"], torch.tensor([3.0, 4.0]))
+    assert torch.equal(
+        model_call["normalization_mean"].cpu(), torch.tensor([1.0, 2.0])
+    )
+    assert torch.equal(
+        model_call["normalization_std"].cpu(), torch.tensor([3.0, 4.0])
+    )
 
 
 def test_inference_uses_sample_normalization_for_legacy_checkpoint(
