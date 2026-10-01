@@ -1,0 +1,13 @@
+systemd-inhibit \
+  --what=idle:sleep \
+  --who="DETR two-class experiment" \
+  --why="Prevent suspend during training" \
+  --mode=block \
+  .venv/bin/python \
+  torchsig_models/models/spectrogram_models/detr/detr_train.py \
+  --dataset-config /home/amandapotts/git/torchsig/torchsig/datasets/default_configs/wideband_clean_train_all.yaml \
+  --signal-generators tone ofdm-64 \
+  --dataset-length 1000 \
+  --dataset-id wideband_clean_detr_tone_ofdm64 \
+  --epochs 30 \
+  --output-dir runs/detr_two_class
