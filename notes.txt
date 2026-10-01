@@ -1,13 +1,12 @@
-systemd-inhibit \
-  --what=idle:sleep \
-  --who="DETR two-class experiment" \
-  --why="Prevent suspend during training" \
-  --mode=block \
-  .venv/bin/python \
+
+.venv/bin/python \
   torchsig_models/models/spectrogram_models/detr/detr_train.py \
-  --dataset-config /home/amandapotts/git/torchsig/torchsig/datasets/default_configs/wideband_clean_train_all.yaml \
+  --dataset-config ../torchsig/torchsig/datasets/default_configs/wideband_clean_train_all.yaml \
   --signal-generators tone ofdm-64 \
   --dataset-length 1000 \
   --dataset-id wideband_clean_detr_tone_ofdm64 \
   --epochs 30 \
   --output-dir runs/detr_two_class
+  
+home/apotts/git/forks/external/torchsig-models/torchsig_models/models/spectrogram_models/detr/detr_train.py:116: UserWarning: Creating a tensor from a list of numpy.ndarrays is extremely slow. Please consider converting the list to a single numpy.ndarray with numpy.array() before converting to a tensor. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_new.cpp:252.)
+  values = torch.as_tensor(list(objects), dtype=torch.float32).reshape(-1, 5)
