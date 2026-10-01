@@ -1,0 +1,101 @@
+Title: Add temporary Lightning DataLoader compatibility workaround for TorchSig 2.2
+
+Summary
+-------
+Keep torchsig-models training compatible with TorchSig 2.2 by avoiding
+WorkerSeedingDataLoader for DataLoaders that PyTorch Lightning may reconstruct.
+Use a standard torch.utils.data.DataLoader while preserving TorchSig dataset
+seeding, deterministic and distinct worker seeds, and existing loader options.
+
+Background
+----------
+PyTorch Lightning reconstructs DataLoaders while preparing training and
+validation, including when it replaces samplers for distributed/DDP training.
+TorchSig 2.2 defines WorkerSeedingDataLoader with a constructor resembling:
+
+    def __init__(self, dataset, seed=None, **kwargs):
+
+Lightning's constructor inspection and reconstruction can pass the captured
+kwargs back as a literal named argument. WorkerSeedingDataLoader forwards that
+argument to torch.utils.data.DataLoader, which fails during validation sanity
+checking with:
+
+    TypeError: DataLoader.__init__() got an unexpected keyword argument 'kwargs'
+
+The upstream loader is expected to be fixed in TorchSig 3.0. torchsig-models
+must remain compatible with TorchSig 2.2 in the meantime, and must not modify
+or monkey-patch the installed TorchSig package.
+
+Proposed Workaround
+-------------------
+Add a small, clearly labeled compatibility helper in
+torchsig_models/utils/datasets.py that:
+
+1. Returns an ordinary torch.utils.data.DataLoader for loaders passed to
+   PyTorch Lightning.
+2. Seeds the TorchSig dataset with the configured split seed before loader
+   construction.
+3. Uses PyTorch's deterministic per-worker initial seeds to seed each worker's
+   dataset independently.
+4. Preserves any existing worker_init_fn by invoking it after TorchSig dataset
+   seeding.
+5. Passes through the existing generator, batch size, shuffle or sampler,
+   worker count, collate function, pin-memory, persistent-worker, and other
+   relevant DataLoader options.
+6. Leaves WorkerSeedingDataLoader in place for offline static-dataset creation,
+   because that loader is consumed by DatasetCreator and is never reconstructed
+   by Lightning.
+
+Apply the compatibility helper to the shared train, validation, and test
+loaders returned by prepare_torchsig_datasets. It may also be used by shared
+static-dataset inference loading for consistent seeding behavior.
+
+Acceptance Criteria
+-------------------
+- DETR and EfficientNet training no longer fail during Lightning's validation
+  sanity check with the unexpected "kwargs" TypeError.
+- Lightning can reconstruct the returned DataLoader with a replacement sampler.
+- The returned Lightning-facing object is a standard PyTorch DataLoader, not a
+  monkey-patched or copied TorchSig loader implementation.
+- The configured seed is applied to seedable TorchSig datasets.
+- Different workers receive distinct deterministic dataset seeds.
+- Existing worker initialization callbacks continue to run.
+- Batch size, shuffle/sampler behavior, generator, worker count, collate
+  function, pin-memory, persistent-worker, and other supplied DataLoader
+  arguments are preserved.
+- Deterministic single-process and single-GPU behavior is preserved.
+- Lightning sampler replacement remains compatible with multi-GPU/DDP use.
+- TorchSig itself and the installed TorchSig package are not changed.
+- The workaround contains a comment identifying it as temporary TorchSig 2.2
+  compatibility code and stating its removal condition.
+
+Test Plan
+---------
+- Construct the compatibility loader and assert it is a standard DataLoader.
+- Verify the parent dataset receives the configured seed.
+- Verify simulated worker contexts receive distinct deterministic seeds.
+- Verify an existing worker_init_fn is retained and invoked.
+- Verify DataLoader configuration such as batching, collate function, and
+  pin-memory is retained.
+- Use Lightning's DataLoader reconstruction utility with a replacement
+  DistributedSampler and verify reconstruction succeeds without a "kwargs"
+  argument error.
+- Run the shared dataset utility tests.
+- Run focused DETR, EfficientNet-2D, and EfficientNet-1D training tests.
+- Run the repository fast test suite.
+
+Removal Plan
+------------
+Once torchsig-models requires a TorchSig release containing the upstream
+WorkerSeedingDataLoader Lightning reconstruction fix (expected in TorchSig
+3.0), remove the compatibility helper and worker seeder, restore direct
+WorkerSeedingDataLoader construction for shared runtime loaders, and retain or
+adapt the reconstruction and deterministic-seeding tests to cover the upstream
+implementation.
+
+Out of Scope
+------------
+- Modifying TorchSig source or the installed TorchSig package.
+- Monkey-patching WorkerSeedingDataLoader.
+- Refactoring dataset generation or unrelated training code.
+- Changing model architecture, loss functions, or training parameters.
