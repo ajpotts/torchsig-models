@@ -1,10 +1,19 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
 import torch
-from torch.utils.data import Dataset, RandomSampler, SequentialSampler, TensorDataset
+from pytorch_lightning.utilities.data import _update_dataloader
+from torch.utils.data import (
+    DataLoader,
+    Dataset,
+    DistributedSampler,
+    RandomSampler,
+    SequentialSampler,
+    TensorDataset,
+)
 from torchsig.signals.signal_types import Signal
 from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
 from torchsig.utils.file_handlers.homogeneous_hdf5 import (
@@ -16,6 +25,8 @@ import torchsig_models.utils.datasets as datasets_module
 from torchsig_models.utils.datasets import (
     _create_static_dataset,
     _dataset_metadata,
+    _lightning_compatible_dataloader,
+    _TorchSigWorkerSeeder,
     _transforms,
     default_narrowband_config,
     prepare_torchsig_datasets,
@@ -75,6 +86,81 @@ class HomogeneousSignalDataset(Dataset):
             data=np.full(8, index, dtype=np.complex64),
             class_index=index,
         )
+
+
+def test_lightning_compatible_loader_seeds_dataset_and_preserves_options() -> None:
+    dataset = SeedableTensorDataset(torch.arange(8))
+
+    def collate_fn(batch):
+        return batch
+
+    loader = _lightning_compatible_dataloader(
+        dataset,
+        seed=321,
+        batch_size=2,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=collate_fn,
+        pin_memory=False,
+        drop_last=True,
+    )
+
+    assert type(loader) is DataLoader
+    assert dataset.seed_value == 321
+    assert loader.batch_size == 2
+    assert loader.num_workers == 0
+    assert loader.collate_fn is collate_fn
+    assert loader.pin_memory is False
+    assert loader.drop_last is True
+
+
+def test_lightning_compatible_loader_gives_workers_distinct_deterministic_seeds() -> None:
+    worker_zero = SeedableTensorDataset(torch.arange(1))
+    worker_one = SeedableTensorDataset(torch.arange(1))
+    original_worker_init = MagicMock()
+    seeder = _TorchSigWorkerSeeder(original_worker_init)
+
+    with (
+        patch(
+            "torchsig_models.utils.datasets.torch.utils.data.get_worker_info",
+            side_effect=[
+                SimpleNamespace(dataset=worker_zero),
+                SimpleNamespace(dataset=worker_one),
+            ],
+        ),
+        patch(
+            "torchsig_models.utils.datasets.torch.initial_seed",
+            side_effect=[456, 457],
+        ),
+    ):
+        seeder(0)
+        seeder(1)
+
+    assert worker_zero.seed_value == 456
+    assert worker_one.seed_value == 457
+    assert worker_zero.seed_value != worker_one.seed_value
+    assert original_worker_init.call_args_list == [call(0), call(1)]
+
+
+def test_lightning_can_reconstruct_compatibility_loader_with_new_sampler() -> None:
+    dataset = SeedableTensorDataset(torch.arange(12))
+    loader = _lightning_compatible_dataloader(
+        dataset,
+        seed=123,
+        batch_size=3,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=True,
+    )
+    sampler = DistributedSampler(dataset, num_replicas=2, rank=0, shuffle=True)
+
+    reconstructed = _update_dataloader(loader, sampler)
+
+    assert type(reconstructed) is DataLoader
+    assert reconstructed.sampler is sampler
+    assert reconstructed.batch_size == loader.batch_size
+    assert reconstructed.num_workers == loader.num_workers
+    assert reconstructed.pin_memory == loader.pin_memory
 
 
 def test_dataset_metadata_merges_defaults():
@@ -188,11 +274,13 @@ def test_create_static_dataset_creates_dataset(
 
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 @patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets._lightning_compatible_dataloader")
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
 @patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
 def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
     iterable_dataset_cls,
-    dataloader_cls,
+    creation_dataloader_cls,
+    compatibility_dataloader,
     dataset_creator_cls,
     static_dataset_cls,
     tmp_path,
@@ -204,15 +292,10 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
         dataset.class_names = ["class_a", "class_b"]
     iterable_dataset_cls.side_effect = iterable_datasets
 
-    loaders = [
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-    ]
-    dataloader_cls.side_effect = loaders
+    creation_loaders = [MagicMock(), MagicMock(), MagicMock()]
+    returned_loaders = [MagicMock(), MagicMock(), MagicMock()]
+    creation_dataloader_cls.side_effect = creation_loaders
+    compatibility_dataloader.side_effect = returned_loaders
 
     static_datasets = [MagicMock(), MagicMock(), MagicMock()]
     static_dataset_cls.side_effect = static_datasets
@@ -230,9 +313,9 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
         signal_generators="all",
     )
 
-    assert train_loader is loaders[3]
-    assert val_loader is loaders[4]
-    assert test_loader is loaders[5]
+    assert train_loader is returned_loaders[0]
+    assert val_loader is returned_loaders[1]
+    assert test_loader is returned_loaders[2]
     assert info == {
         "root": str(tmp_path / cfg.dataset_id),
         "class_names": ["class_a", "class_b"],
@@ -240,7 +323,8 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
 
     assert dataset_creator_cls.call_count == 3
     assert static_dataset_cls.call_count == 3
-    assert dataloader_cls.call_count == 6
+    assert creation_dataloader_cls.call_count == 3
+    assert compatibility_dataloader.call_count == 3
 
     roots = [call.kwargs["root"] for call in dataset_creator_cls.call_args_list]
     assert roots == [
@@ -249,7 +333,7 @@ def test_prepare_torchsig_datasets_returns_three_loaders_and_info(
         str(tmp_path / cfg.dataset_id / "test"),
     ]
 
-    loader_calls = dataloader_cls.call_args_list[3:]
+    loader_calls = compatibility_dataloader.call_args_list
     assert [call.kwargs["shuffle"] for call in loader_calls] == [
         True,
         False,
@@ -416,6 +500,7 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
         patch("torchsig_models.utils.datasets.StaticTorchSigDataset"),
         patch("torchsig_models.utils.datasets.TorchSigIterableDataset"),
         patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader"),
+        patch("torchsig_models.utils.datasets._lightning_compatible_dataloader"),
     ):
         dataset_creator_cls.return_value = MagicMock()
 
@@ -614,11 +699,13 @@ def test_prepare_torchsig_datasets_reports_invalid_existing_split(
 
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 @patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets._lightning_compatible_dataloader")
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
 @patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
 def test_prepare_torchsig_datasets_uses_explicit_transforms(
     iterable_dataset_cls,
-    dataloader_cls,
+    creation_dataloader_cls,
+    compatibility_dataloader,
     dataset_creator_cls,
     static_dataset_cls,
     tmp_path,
@@ -627,7 +714,8 @@ def test_prepare_torchsig_datasets_uses_explicit_transforms(
     transforms = [MagicMock()]
     dataset_creator_cls.return_value = MagicMock()
     static_dataset_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
-    dataloader_cls.side_effect = [MagicMock() for _ in range(6)]
+    creation_dataloader_cls.side_effect = [MagicMock() for _ in range(3)]
+    compatibility_dataloader.side_effect = [MagicMock() for _ in range(3)]
 
     prepare_torchsig_datasets(
         train_cfg=cfg,
@@ -845,7 +933,7 @@ def test_create_static_dataset_round_trips_homogeneous_hdf5(tmp_path):
     dataset.reader.teardown()
 
 
-@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets._lightning_compatible_dataloader")
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 def test_prepare_torchsig_inference_dataset_returns_loader(
     static_dataset_cls,
@@ -872,6 +960,7 @@ def test_prepare_torchsig_inference_dataset_returns_loader(
     )
     dataloader_cls.assert_called_once_with(
         static_dataset,
+        seed=0,
         batch_size=8,
         num_workers=2,
         shuffle=False,
@@ -881,7 +970,7 @@ def test_prepare_torchsig_inference_dataset_returns_loader(
 
 
 @patch("torchsig_models.utils.datasets.torch.cuda.is_available")
-@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets._lightning_compatible_dataloader")
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 def test_prepare_torchsig_inference_dataset_uses_defaults(
     static_dataset_cls,
@@ -899,6 +988,7 @@ def test_prepare_torchsig_inference_dataset_uses_defaults(
     )
     dataloader_cls.assert_called_once_with(
         static_dataset_cls.return_value,
+        seed=0,
         batch_size=4,
         num_workers=8,
         shuffle=False,

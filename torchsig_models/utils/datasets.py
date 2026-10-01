@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -300,6 +301,50 @@ def _subsample_existing_dataset(
     return _SeedableSubset(dataset, indices)
 
 
+@dataclass(frozen=True)
+class _TorchSigWorkerSeeder:
+    """Seed a TorchSig dataset from PyTorch's deterministic per-worker seed."""
+
+    worker_init_fn: Callable[[int], None] | None = None
+
+    def __call__(self, worker_id: int) -> None:
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            seed = int(torch.initial_seed() % (2**32))
+            dataset_seed = getattr(worker_info.dataset, "seed", None)
+            if callable(dataset_seed):
+                dataset_seed(seed)
+        if self.worker_init_fn is not None:
+            self.worker_init_fn(worker_id)
+
+
+def _lightning_compatible_dataloader(
+    dataset: torch.utils.data.Dataset,
+    *,
+    seed: int,
+    **kwargs: Any,
+) -> torch.utils.data.DataLoader:
+    """Build a Lightning-reconstructable loader with TorchSig-style seeding.
+
+    Temporary TorchSig 2.2 compatibility workaround: its
+    ``WorkerSeedingDataLoader(dataset, seed=None, **kwargs)`` constructor is
+    reconstructed incorrectly by PyTorch Lightning, which can forward a
+    literal ``kwargs`` argument to PyTorch's ``DataLoader``. This standard
+    loader preserves deterministic dataset and per-worker seeding and can be
+    removed once TorchSig includes the upstream Lightning compatibility fix.
+    """
+    dataset_seed = getattr(dataset, "seed", None)
+    if callable(dataset_seed):
+        dataset_seed(seed)
+
+    loader_kwargs = dict(kwargs)
+    loader_kwargs.setdefault("generator", _loader_generator(seed))
+    loader_kwargs["worker_init_fn"] = _TorchSigWorkerSeeder(
+        loader_kwargs.get("worker_init_fn")
+    )
+    return torch.utils.data.DataLoader(dataset, **loader_kwargs)
+
+
 def prepare_torchsig_datasets(
     train_cfg: TorchSigDatasetConfig,
     val_cfg: TorchSigDatasetConfig,
@@ -459,34 +504,34 @@ def prepare_torchsig_datasets(
         test_dataset = created[2][0]
 
     return (
-        WorkerSeedingDataLoader(
+        _lightning_compatible_dataloader(
             train_dataset,
+            seed=train_cfg.seed,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=True,
-            seed=train_cfg.seed,
             generator=_loader_generator(train_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
             collate_fn=collate_fn,
         ),
-        WorkerSeedingDataLoader(
+        _lightning_compatible_dataloader(
             val_dataset,
+            seed=val_cfg.seed,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=False,
-            seed=val_cfg.seed,
             generator=_loader_generator(val_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
             collate_fn=collate_fn,
         ),
-        WorkerSeedingDataLoader(
+        _lightning_compatible_dataloader(
             test_dataset,
+            seed=test_cfg.seed,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=False,
-            seed=test_cfg.seed,
             generator=_loader_generator(test_cfg.seed),
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
@@ -548,4 +593,4 @@ def prepare_torchsig_inference_dataset(
     if collate_fn is not None:
         loader_kwargs["collate_fn"] = collate_fn
 
-    return WorkerSeedingDataLoader(dataset, **loader_kwargs)
+    return _lightning_compatible_dataloader(dataset, seed=0, **loader_kwargs)
