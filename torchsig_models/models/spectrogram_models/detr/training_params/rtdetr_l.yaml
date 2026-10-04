@@ -1,0 +1,13 @@
+experiment_name: spectrogram_wideband_detection
+model_name: rtdetr_l
+pretrained: true
+normalization: dataset
+normalization_eps: 1.0e-6
+clip_sigma: 4.0
+image_size: 512
+batch_size: 2
+max_epochs: 30
+optimizer: AdamW
+learning_rate: 0.0003
+weight_decay: 0.0001
+cos_lr: true
