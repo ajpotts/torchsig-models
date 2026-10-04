@@ -1,4 +1,4 @@
-"""Tests for DETR training and inference entry points."""
+"""Tests for RT-DETR training and inference entry points."""
 
 from __future__ import annotations
 
@@ -6,256 +6,128 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import cv2
 import numpy as np
 import pytest
 import torch
 import yaml
 
-import torchsig_models.models.spectrogram_models.detr.detr_train as training_module
 import torchsig_models.models.spectrogram_models.detr.detr_inference as inference_module
+import torchsig_models.models.spectrogram_models.detr.detr_train as training_module
 from torchsig_models.models.spectrogram_models.detr.detr_inference import (
-    _infer_num_classes,
-    _strip_lightning_prefix,
-    postprocess_detections,
+    detr_inference,
+    evaluate_detr,
 )
 from torchsig_models.models.spectrogram_models.detr.detr_train import (
-    DETRDetector,
-    _detection_counts,
-    detr_collate,
+    export_ultralytics_dataset,
     load_training_params,
+    spectrogram_to_uint8,
     train_detr,
 )
 
 
-def test_detection_counts_are_class_and_iou_aware() -> None:
-    predictions = [
-        {
-            "boxes": torch.tensor(
-                [[0.0, 0.0, 10.0, 10.0], [20.0, 20.0, 30.0, 30.0]]
-            ),
-            "scores": torch.tensor([0.9, 0.8]),
-            "labels": torch.tensor([1, 0]),
-        }
-    ]
-    targets = [
-        {
-            "boxes": torch.tensor(
-                [[0.0, 0.0, 10.0, 10.0], [40.0, 40.0, 50.0, 50.0]]
-            ),
-            "labels": torch.tensor([1, 0]),
-        }
-    ]
+class _Dataset:
+    def __init__(self, image: np.ndarray, labels: list[list[float]]) -> None:
+        self.item = image, labels
 
-    true_positives, false_positives, false_negatives = _detection_counts(
-        predictions, targets
-    )
+    def __len__(self) -> int:
+        return 1
 
-    assert true_positives.item() == 1
-    assert false_positives.item() == 1
-    assert false_negatives.item() == 1
-
-
-def test_detector_logs_test_detection_metrics() -> None:
-    detector = DETRDetector(
-        torch.nn.Identity(),
-        num_classes=1,
-        learning_rate=1e-4,
-        weight_decay=1e-4,
-        max_epochs=1,
-    )
-    predictions = [
-        {
-            "boxes": torch.tensor([[0.0, 0.0, 10.0, 10.0]]),
-            "scores": torch.tensor([0.9]),
-            "labels": torch.tensor([0]),
-        }
-    ]
-    targets = [
-        {
-            "boxes": torch.tensor([[0.0, 0.0, 10.0, 10.0]]),
-            "labels": torch.tensor([0]),
-        }
-    ]
-    detector.test_map.update(predictions, targets)
-    detector.test_true_positives.add_(1)
-    detector.log_dict = MagicMock()  # type: ignore[method-assign]
-
-    detector.on_test_epoch_end()
-
-    logged = detector.log_dict.call_args.args[0]
-    assert logged["test_map"].item() == pytest.approx(1.0)
-    assert logged["test_map_50"].item() == pytest.approx(1.0)
-    assert logged["test_precision"].item() == pytest.approx(1.0)
-    assert logged["test_recall"].item() == pytest.approx(1.0)
-
-
-def test_detr_collate_preserves_multiple_signals() -> None:
-    batch = [
-        (
-            np.ones((8, 8), dtype=np.float32),
-            [[0, 0.25, 0.25, 0.1, 0.2], [2, 0.75, 0.5, 0.2, 0.3]],
-        ),
-        (np.zeros((8, 8), dtype=np.float32), []),
-    ]
-
-    images, targets = detr_collate(batch)
-
-    assert images.shape == (2, 2, 8, 8)
-    assert torch.equal(images[0], torch.ones(2, 8, 8))
-    assert targets[0]["labels"].tolist() == [0, 2]
-    assert targets[0]["boxes"].shape == (2, 4)
-    assert targets[1]["labels"].shape == (0,)
-    assert targets[1]["boxes"].shape == (0, 4)
-
-
-def test_detr_collate_rejects_invalid_channel_count() -> None:
-    with pytest.raises(ValueError, match="one or two input channels"):
-        detr_collate([(np.ones((3, 8, 8), dtype=np.float32), [])])
+    def __getitem__(self, index: int) -> tuple[np.ndarray, list[list[float]]]:
+        assert index == 0
+        return self.item
 
 
 def test_load_training_params_reads_yaml(tmp_path: Path) -> None:
     path = tmp_path / "params.yaml"
-    expected = {"batch_size": 4, "max_epochs": 2}
+    expected = {"batch_size": 2, "max_epochs": 3}
     path.write_text(yaml.safe_dump(expected), encoding="utf-8")
 
-    assert load_training_params("detr_b0_nano", path) == expected
+    assert load_training_params("rtdetr_l", path) == expected
 
 
-def test_strip_lightning_prefix_omits_criterion_state() -> None:
-    state = {
-        "model.linear_class.weight": torch.ones(4, 8),
-        "criterion.empty_weight": torch.ones(4),
+@pytest.mark.parametrize("normalization", ["sample", "dataset", "none"])
+def test_spectrogram_to_uint8_supports_normalization_modes(
+    normalization: str,
+) -> None:
+    image = np.array([[-1.0, 0.0, 1.0]], dtype=np.float32)
+    kwargs = {"mean": 0.0, "std": 1.0} if normalization == "dataset" else {}
+
+    encoded = spectrogram_to_uint8(
+        image,
+        normalization=normalization,
+        clip_sigma=1.0,
+        image_min=-1.0,
+        image_max=1.0,
+        **kwargs,
+    )
+
+    assert encoded.dtype == np.uint8
+    assert encoded.tolist() == [[0, 128, 255]]
+
+
+def test_export_writes_all_splits_and_preserves_class_order(tmp_path: Path) -> None:
+    image = np.arange(16, dtype=np.float32).reshape(4, 4)
+    datasets = {
+        split: _Dataset(image, [[1, 0.25, 0.5, 0.1, 0.2]])
+        for split in ("train", "val", "test")
     }
 
-    stripped = _strip_lightning_prefix(state)
+    config_path = export_ultralytics_dataset(
+        datasets,
+        tmp_path / "export",
+        ["tone", "ofdm-64"],
+        normalization="dataset",
+        mean=float(image.mean()),
+        std=float(image.std()),
+    )
 
-    assert list(stripped) == ["linear_class.weight"]
-    assert _infer_num_classes(stripped) == 3
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert config["names"] == {0: "tone", 1: "ofdm-64"}
+    assert config["test"] == "images/test"
+    for split in ("train", "val", "test"):
+        label = config_path.parent / "labels" / split / "0000000000.txt"
+        image_path = config_path.parent / "images" / split / "0000000000.png"
+        assert label.read_text(encoding="utf-8") == "1 0.25 0.5 0.1 0.2"
+        assert cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE).shape == (4, 4)
 
 
-def test_postprocess_detections_filters_background_and_confidence() -> None:
-    outputs = {
-        "pred_logits": torch.tensor(
-            [[[8.0, 0.0, -2.0], [0.0, 0.0, 8.0], [0.1, 0.0, 0.0]]]
+def test_train_uses_best_checkpoint_and_test_split(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dataset = _Dataset(np.ones((4, 4), dtype=np.float32), [])
+    loader = SimpleNamespace(dataset=dataset)
+    monkeypatch.setattr(
+        training_module,
+        "prepare_torchsig_datasets",
+        lambda *_args, **_kwargs: (
+            loader,
+            loader,
+            loader,
+            {"class_names": ["tone", "ofdm-64"]},
         ),
-        "pred_boxes": torch.rand(1, 3, 4),
-    }
-
-    detections = postprocess_detections(outputs, confidence_threshold=0.75)
-
-    assert detections[0]["labels"].tolist() == [0]
-    assert detections[0]["boxes"].shape == (1, 4)
-    assert detections[0]["scores"].device.type == "cpu"
-
-
-def test_postprocess_rejects_invalid_threshold() -> None:
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        postprocess_detections({}, confidence_threshold=1.1)
-
-
-def test_inference_restores_dataset_normalization_from_checkpoint(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    checkpoint_path = tmp_path / "model.ckpt"
-    torch.save(
-        {
-            "state_dict": {
-                "model.linear_class.weight": torch.ones(3, 4),
-                "model.backbone.model.normalize.mean": torch.tensor([1.0, 2.0]),
-                "model.backbone.model.normalize.std": torch.tensor([3.0, 4.0]),
-            },
-            "hyper_parameters": {
-                "model_name": "detr_b0_nano",
-                "num_classes": 2,
-                "normalization": {"mode": "dataset", "eps": 1e-5},
-            },
-        },
-        checkpoint_path,
     )
+    dataset_yaml = tmp_path / "dataset.yaml"
+    dataset_yaml.write_text("names: [tone, ofdm-64]\n", encoding="utf-8")
+    monkeypatch.setattr(
+        training_module,
+        "export_ultralytics_dataset",
+        lambda *_args, **_kwargs: dataset_yaml,
+    )
+
+    class _Boxes:
+        map = 0.7
+        map50 = 0.8
+        mp = 0.9
+        mr = 0.85
+
     model = MagicMock()
-    model_factory = MagicMock(return_value=model)
-    monkeypatch.setitem(inference_module.MODEL_FACTORY, "detr_b0_nano", model_factory)
-    monkeypatch.setattr(
-        inference_module,
-        "prepare_torchsig_inference_dataset",
-        MagicMock(return_value=[]),
-    )
-
-    assert inference_module.detr_inference(tmp_path, checkpoint_path) == []
-
-    model_call = model_factory.call_args.kwargs
-    assert model_call["normalization"] == "dataset"
-    assert model_call["normalization_eps"] == pytest.approx(1e-5)
-    assert torch.equal(
-        model_call["normalization_mean"].cpu(), torch.tensor([1.0, 2.0])
-    )
-    assert torch.equal(
-        model_call["normalization_std"].cpu(), torch.tensor([3.0, 4.0])
-    )
-
-
-def test_inference_uses_sample_normalization_for_legacy_checkpoint(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    checkpoint_path = tmp_path / "legacy.ckpt"
-    torch.save(
-        {"state_dict": {"model.linear_class.weight": torch.ones(2, 4)}},
-        checkpoint_path,
-    )
-    model_factory = MagicMock(return_value=MagicMock())
-    monkeypatch.setitem(inference_module.MODEL_FACTORY, "detr_b0_nano", model_factory)
-    monkeypatch.setattr(
-        inference_module,
-        "prepare_torchsig_inference_dataset",
-        MagicMock(return_value=[]),
-    )
-
-    inference_module.detr_inference(tmp_path, checkpoint_path)
-
-    assert model_factory.call_args.kwargs["normalization"] == "sample"
-    assert model_factory.call_args.kwargs["learned_object_queries"] is False
-
-
-def test_train_detr_uses_warn_only_determinism(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    loaders = (object(), object(), object(), {"class_names": ["signal"]})
-    monkeypatch.setattr(
-        training_module, "prepare_torchsig_datasets", MagicMock(return_value=loaders)
-    )
-    monkeypatch.setattr(training_module, "set_deterministic", MagicMock())
-    normalization_stats = MagicMock(
-        return_value=(torch.tensor([1.0, 1.0]), torch.tensor([2.0, 2.0]))
-    )
-    monkeypatch.setattr(
-        training_module,
-        "compute_dataset_channel_stats",
-        normalization_stats,
-    )
-    monkeypatch.setattr(
-        training_module,
-        "_spectrogram_transforms",
-        MagicMock(return_value=[]),
-    )
-    monkeypatch.setitem(
-        training_module.MODEL_FACTORY,
-        "detr_b0_nano",
-        MagicMock(return_value=torch.nn.Linear(1, 1)),
-    )
-    checkpoint = SimpleNamespace(best_model_path="best.ckpt")
-    monkeypatch.setattr(training_module, "ModelCheckpoint", MagicMock(return_value=checkpoint))
-    trainer = MagicMock()
-    trainer.callback_metrics = {
-        "val_loss": torch.tensor(1.0),
-        "val_map": torch.tensor(0.2),
-        "val_map_50": torch.tensor(0.3),
-        "val_precision": torch.tensor(0.4),
-        "val_recall": torch.tensor(0.5),
-    }
-    trainer.test.return_value = [{"test_loss": 1.25}]
-    trainer_factory = MagicMock(return_value=trainer)
-    monkeypatch.setattr(training_module.pl, "Trainer", trainer_factory)
-    cfg = SimpleNamespace(seed=123)
+    model.metrics = SimpleNamespace(box=_Boxes())
+    model.trainer.best = tmp_path / "train" / "weights" / "best.pt"
+    model.val.return_value = SimpleNamespace(box=_Boxes())
+    factory = MagicMock(return_value=model)
+    monkeypatch.setitem(training_module.MODEL_FACTORY, "rtdetr_l", factory)
+    cfg = SimpleNamespace(seed=7, output_spectrogram_fft=512)
 
     result = train_detr(
         cfg,
@@ -263,20 +135,63 @@ def test_train_detr_uses_warn_only_determinism(
         cfg,
         {
             "batch_size": 2,
-            "max_epochs": 1,
+            "max_epochs": 3,
             "learning_rate": 1e-4,
-            "weight_decay": 1e-4,
+            "weight_decay": 1e-5,
+            "normalization": "sample",
         },
-        tmp_path,
+        tmp_path / "run",
     )
 
-    assert trainer_factory.call_args.kwargs["deterministic"] == "warn"
-    checkpoint_call = training_module.ModelCheckpoint.call_args.kwargs
-    assert checkpoint_call["monitor"] == "val_map_50"
-    assert checkpoint_call["mode"] == "max"
-    assert result["val_map_50"] == pytest.approx(0.3)
-    normalization_stats.assert_called_once_with(loaders[0])
-    model_call = training_module.MODEL_FACTORY["detr_b0_nano"].call_args.kwargs
-    assert model_call["normalization"] == "dataset"
-    assert torch.equal(model_call["normalization_mean"], torch.tensor([1.0, 1.0]))
-    assert torch.equal(model_call["normalization_std"], torch.tensor([2.0, 2.0]))
+    train_call = model.train.call_args.kwargs
+    assert train_call["deterministic"] is False
+    assert train_call["mosaic"] == 0.0
+    assert model.val.call_args.kwargs["split"] == "test"
+    assert result["best_checkpoint"].endswith("train/weights/best.pt")
+    assert result["test_summary"]["map_50"] == pytest.approx(0.8)
+
+
+def test_inference_returns_normalized_detections(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checkpoint = tmp_path / "best.pt"
+    checkpoint.touch()
+    boxes = SimpleNamespace(
+        xywhn=torch.tensor([[0.5, 0.5, 0.1, 0.2]]),
+        conf=torch.tensor([0.9]),
+        cls=torch.tensor([1.0]),
+    )
+    model = MagicMock()
+    model.predict.return_value = [
+        SimpleNamespace(path="sample.png", boxes=boxes, names={0: "tone", 1: "ofdm"})
+    ]
+    monkeypatch.setattr(inference_module, "rtdetr_l", lambda **_kwargs: model)
+
+    detections = detr_inference("images", checkpoint)
+
+    assert detections[0]["labels"].tolist() == [1]
+    assert detections[0]["boxes"].shape == (1, 4)
+    assert detections[0]["scores"].item() == pytest.approx(0.9)
+
+
+def test_evaluate_returns_detection_metrics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checkpoint = tmp_path / "best.pt"
+    dataset_yaml = tmp_path / "dataset.yaml"
+    checkpoint.touch()
+    dataset_yaml.touch()
+    boxes = SimpleNamespace(map=0.7, map50=0.8, mp=0.9, mr=0.85)
+    model = MagicMock()
+    model.val.return_value = SimpleNamespace(box=boxes)
+    monkeypatch.setattr(inference_module, "rtdetr_l", lambda **_kwargs: model)
+
+    summary = evaluate_detr(dataset_yaml, checkpoint)
+
+    assert summary == {
+        "map": 0.7,
+        "map_50": 0.8,
+        "precision": 0.9,
+        "recall": 0.85,
+    }
+    assert model.val.call_args.kwargs["split"] == "test"
