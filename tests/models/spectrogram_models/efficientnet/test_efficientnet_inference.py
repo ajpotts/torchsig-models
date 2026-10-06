@@ -11,11 +11,11 @@ import torch
 
 import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference as inference_module
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_inference import (
+    _load_checkpoint,
     _resolve_num_classes,
     _strip_lightning_prefix,
     efficientnet_inference,
 )
-
 
 # =============================================================================
 # Checkpoint key normalization
@@ -186,7 +186,7 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     torch_load.assert_called_once_with(
         checkpoint_path,
         map_location=torch.device("cpu"),
-        weights_only=False,
+        weights_only=True,
     )
     model.load_state_dict.assert_called_once_with(
         {
@@ -402,11 +402,36 @@ def test_efficientnet_inference_uses_cuda_when_available(
     torch_load.assert_called_once_with(
         checkpoint_path,
         map_location=expected_device,
-        weights_only=False,
+        weights_only=True,
     )
     model.to.assert_called_once_with(expected_device)
 
     assert evaluate_classifier.call_args.kwargs["device"] == expected_device
+
+
+def test_unsafe_checkpoint_loading_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "legacy.ckpt"
+    checkpoint_path.touch()
+    torch_load = MagicMock(return_value={})
+    monkeypatch.setattr(inference_module.torch, "load", torch_load)
+    device = torch.device("cpu")
+
+    with pytest.warns(RuntimeWarning, match="trusted source"):
+        checkpoint = _load_checkpoint(
+            checkpoint_path,
+            device,
+            allow_unsafe_checkpoint=True,
+        )
+
+    assert checkpoint == {}
+    torch_load.assert_called_once_with(
+        checkpoint_path,
+        map_location=device,
+        weights_only=False,
+    )
 
 
 def test_efficientnet_inference_rejects_checkpoint_key_mismatches(

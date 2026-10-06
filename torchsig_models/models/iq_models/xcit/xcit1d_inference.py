@@ -1,19 +1,19 @@
 """Inference script for an XCiT 1D classifier trained on a TorchSig dataset."""
 
-from torchsig_models.models import XCiTClassifier
-from torchsig_models.utils.training import configure_determinism
-from torchsig.utils.defaults import TorchSigDefaults
-from torchsig.datasets.datamodules import TorchSigDataModule
-from torchsig.transforms.transforms import ComplexTo2D
-from torchsig.utils.yaml import load_config_from_yaml
-
-import numpy as np
 import os
 from pathlib import Path
+
+import numpy as np
+import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
-import pytorch_lightning as pl
+from torchsig.datasets.datamodules import TorchSigDataModule
+from torchsig.transforms.transforms import ComplexTo2D
+from torchsig.utils.defaults import TorchSigDefaults
+from torchsig.utils.yaml import load_config_from_yaml
 
+from torchsig_models.models import XCiTClassifier
+from torchsig_models.utils.training import configure_determinism
 
 torch.set_float32_matmul_precision("high")
 
@@ -26,32 +26,28 @@ def _to_single_class_index(target) -> int:
             raise KeyError(
                 f"Expected 'class_index' in target dict, got keys={list(target.keys())}"
             )
-        return _to_single_class_index(target["class_index"])
-
-    if torch.is_tensor(target):
+        target = _to_single_class_index(target["class_index"])
+    elif torch.is_tensor(target):
         if target.numel() != 1:
             raise ValueError(
                 f"Expected exactly one class_index per sample, got tensor shape {tuple(target.shape)}"
             )
-        return int(target.detach().cpu().reshape(-1)[0].item())
-
-    if isinstance(target, np.ndarray):
+        target = target.detach().cpu().reshape(-1)[0].item()
+    elif isinstance(target, np.ndarray):
         if target.size != 1:
             raise ValueError(
                 f"Expected exactly one class_index per sample, got ndarray shape {target.shape}"
             )
-        return int(target.reshape(-1)[0].item())
-
-    if isinstance(target, np.generic):
-        return int(target.item())
-
-    if isinstance(target, (list, tuple)):
+        target = target.reshape(-1)[0].item()
+    elif isinstance(target, np.generic):
+        target = target.item()
+    elif isinstance(target, (list, tuple)):
         if len(target) != 1:
             raise ValueError(
                 "Expected exactly one class_index per sample for narrowband classification; "
                 f"got {len(target)} targets: {target!r}"
             )
-        return _to_single_class_index(target[0])
+        target = _to_single_class_index(target[0])
 
     return int(target)
 

@@ -3,32 +3,54 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 from typing import Any
 
 import torch
 
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
-    EfficientNet2DModelName,
     MODEL_FACTORY,
+    EfficientNet2DModelName,
     load_training_params,
 )
+from torchsig_models.utils.class_names import checkpoint_class_names
 from torchsig_models.utils.datasets import (
     prepare_torchsig_inference_dataset,
 )
-from torchsig_models.utils.class_names import checkpoint_class_names
-from torchsig_models.utils.training import evaluate_classifier
 from torchsig_models.utils.normalization import (
     NormalizationMode,
     normalization_from_state_dict,
     resolve_checkpoint_normalization_mode,
 )
-
+from torchsig_models.utils.training import evaluate_classifier
 
 __all__ = [
     "efficientnet_inference",
     "parse_args",
 ]
+
+
+def _load_checkpoint(
+    checkpoint_path: Path,
+    device: torch.device,
+    *,
+    allow_unsafe_checkpoint: bool,
+) -> object:
+    """Load a checkpoint without general pickle deserialization by default."""
+    if allow_unsafe_checkpoint:
+        warnings.warn(
+            "Unsafe checkpoint loading is enabled. General pickle "
+            "deserialization can execute arbitrary code; continue only if "
+            "the checkpoint comes from a trusted source.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    return torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=not allow_unsafe_checkpoint,
+    )
 
 
 def _strip_lightning_prefix(
@@ -85,6 +107,7 @@ def efficientnet_inference(
     class_names: list[str] | None = None,
     model_name: EfficientNet2DModelName = "efficientnet_b4",
     normalization: NormalizationMode | None = None,
+    allow_unsafe_checkpoint: bool = False,
 ) -> float:
     """Evaluate an EfficientNet-2D model on a static TorchSig dataset.
 
@@ -101,6 +124,9 @@ def efficientnet_inference(
         model_name: EfficientNet architecture represented by the checkpoint.
         normalization: Optional normalization override. Dataset statistics are
             restored from new checkpoints; legacy behavior is otherwise used.
+        allow_unsafe_checkpoint: Allow general pickle deserialization for a
+            trusted legacy checkpoint. This can execute arbitrary code and is
+            disabled by default.
 
     Returns:
         Final test-set classification accuracy.
@@ -121,10 +147,10 @@ def efficientnet_inference(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint = torch.load(
+    checkpoint = _load_checkpoint(
         checkpoint_path,
-        map_location=device,
-        weights_only=False,
+        device,
+        allow_unsafe_checkpoint=allow_unsafe_checkpoint,
     )
     state_dict = checkpoint.get(
         "state_dict",
@@ -234,6 +260,14 @@ def parse_args() -> argparse.Namespace:
         choices=["dataset", "sample", "none"],
         help="Override checkpoint normalization mode.",
     )
+    parser.add_argument(
+        "--allow-unsafe-checkpoint",
+        action="store_true",
+        help=(
+            "Allow general pickle deserialization for a trusted legacy "
+            "checkpoint. This can execute arbitrary code."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -250,4 +284,5 @@ if __name__ == "__main__":
         num_classes=args.num_classes,
         model_name=args.model,
         normalization=args.normalization,
+        allow_unsafe_checkpoint=args.allow_unsafe_checkpoint,
     )

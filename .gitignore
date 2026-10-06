@@ -31,6 +31,8 @@ lightning_logs/
 **.out
 *.lock
 *.md
+!tickets/05-safe-checkpoint-loading-ticket-description.md
+!tickets/05-safe-checkpoint-loading-mr-description.md
 
 # TorchSig_models
 torchsig_model.egg-info
