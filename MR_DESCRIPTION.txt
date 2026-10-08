@@ -1,15 +1,20 @@
-Title: Add opt-in homogeneous HDF5 support for TorchSig 2.2 datasets
+Title: Train directly from pre-generated TorchSig 2.2 storage backends
 
 Summary
 
-This MR adds opt-in support for TorchSig 2.2's homogeneous HDF5 backend when
-generating static datasets. The legacy HDF5 backend remains the default, so
-existing callers and datasets retain their current behavior.
+This MR lets the training modules use the storage backend declared in a
+TorchSig 2.2 dataset configuration. A pre-generated homogeneous HDF5 dataset
+can therefore be trained from using its original YAML configuration, without
+manually passing Python reader and writer classes. Legacy HDF5 remains the
+default for configurations that omit `storage`.
 
 Changes
 
-- Add file_handler, file_reader, and file_handler_options arguments to the
-  shared dataset preparation utilities.
+- Resolve legacy, packed, and homogeneous writer/reader pairs from
+  `storage.writer` in each dataset configuration.
+- Use `storage.options` when reopening or generating the configured dataset.
+- Keep file_handler, file_reader, and file_handler_options as explicit Python
+  API overrides.
 - Forward the storage configuration consistently to train, validation, and
   test DatasetCreator instances.
 - Reopen each generated split with the reader paired with the selected writer.
@@ -23,15 +28,16 @@ Changes
 
 Usage
 
-Run the toy example with homogeneous HDF5 enabled:
+Set the backend in the dataset YAML used to generate and train the dataset:
 
-    python examples/scripts/spectrogram_efficientnet_toy_classification.py \
-        --homogeneous-hdf5
+    storage:
+      writer: homogeneous
+      options:
+        compression: null
 
-Library callers can pass HomogeneousHDF5Writer and HomogeneousHDF5Reader to
-prepare_torchsig_datasets(), train_efficientnet_iq(), or
-train_efficientnet_2d(). Writer-specific settings such as compression and
-chunk_samples can be supplied through file_handler_options.
+Then pass that YAML through the normal EfficientNet IQ or spectrogram training
+CLI. The training path selects HomogeneousHDF5Reader automatically. Library
+callers may still override the classes and writer options explicitly.
 
 Compatibility
 
@@ -39,7 +45,9 @@ Compatibility
 - Existing calls require no changes.
 - Homogeneous HDF5 is appropriate only when every top-level sample has the
   same shape and dtype.
-- Existing static datasets remain readable through the legacy defaults.
+- Existing static datasets remain readable through legacy configurations.
+- A pre-generated dataset must be paired with the same storage declaration
+  that was used to create it.
 
 Validation
 

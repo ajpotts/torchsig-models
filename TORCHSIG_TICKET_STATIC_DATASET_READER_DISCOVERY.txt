@@ -55,6 +55,7 @@ Acceptance criteria
 
 Workaround
 
-Downstream callers must currently pass the matching reader explicitly. The
-torchsig-models integration passes both file_handler and file_reader through
-its dataset and training utilities.
+Downstream callers must currently select the matching reader explicitly or
+retain the original dataset YAML storage declaration. The torchsig-models
+integration resolves the reader from `storage.writer` and also permits an
+explicit file_handler/file_reader override.
