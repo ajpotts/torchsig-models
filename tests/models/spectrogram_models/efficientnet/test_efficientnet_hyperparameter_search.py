@@ -540,23 +540,24 @@ def test_main_configures_and_runs_optimization(
     ) -> SimpleNamespace:
         optimization_arguments.update(kwargs)
 
-        trial_dir = Path(kwargs["output_dir"]) / "trial_0000"
-        trial_dir.mkdir(parents=True)
+        for trial_number in range(2):
+            trial_dir = Path(kwargs["output_dir"]) / f"trial_{trial_number:04d}"
+            trial_dir.mkdir(parents=True)
 
-        result = kwargs["train_fn"](
-            {
-                **kwargs["base_params"],
-                "learning_rate": 0.001,
-                "normalization": "sample",
-            },
-            trial_dir,
-            SimpleNamespace(number=0),
-        )
+            result = kwargs["train_fn"](
+                {
+                    **kwargs["base_params"],
+                    "learning_rate": 0.001,
+                    "normalization": "sample",
+                },
+                trial_dir,
+                SimpleNamespace(number=trial_number),
+            )
 
-        assert result["val_f1"] == pytest.approx(0.80)
-        assert result["val_acc"] == pytest.approx(0.85)
-        assert result["train_f1"] == pytest.approx(0.90)
-        assert result["train_acc"] == pytest.approx(0.95)
+            assert result["val_f1"] == pytest.approx(0.80)
+            assert result["val_acc"] == pytest.approx(0.85)
+            assert result["train_f1"] == pytest.approx(0.90)
+            assert result["train_acc"] == pytest.approx(0.95)
 
         return SimpleNamespace(
             best_value=0.80,
@@ -602,7 +603,9 @@ def test_main_configures_and_runs_optimization(
     assert optimization_arguments["mlflow_timeout_seconds"] == 7
     assert optimization_arguments["mlflow_max_retries"] == 2
 
-    assert len(training_calls) == 1
+    assert len(training_calls) == 2
+    assert all(call["dataset_root"] == dataset_root for call in training_calls)
+    assert all(call["dataset_mode"] == "existing" for call in training_calls)
 
     training_call = training_calls[0]
 
@@ -647,7 +650,7 @@ def test_main_configures_and_runs_optimization(
     assert training_call["checkpoint_dir"] == (trial_dir / "checkpoints")
     assert training_call["metrics_dir"] == (trial_dir / "metrics")
 
-    assert len(FakeCSVLogger.instances) == 1
+    assert len(FakeCSVLogger.instances) == 2
 
     csv_logger = FakeCSVLogger.instances[0]
 
