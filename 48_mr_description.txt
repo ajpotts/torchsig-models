@@ -1,0 +1,41 @@
+Summary
+=======
+
+- Expand automated coverage for supported static dataset directory layouts.
+- Verify existing and read-only datasets are reused without generation or
+  modification.
+- Cover explicit overwrite generation and incomplete-dataset failures.
+- Exercise repeated Optuna trials against the same prepared static dataset.
+
+Motivation
+==========
+
+Static TorchSig datasets may be stored as nested train/validation/test splits
+or as separate split-specific dataset directories. Hyperparameter searches
+also depend on those datasets remaining unchanged and reusable across trials,
+including when the source directory is read-only. These behaviors need direct
+regression coverage so future dataset preparation changes cannot silently
+reintroduce generation or writes.
+
+Implementation
+==============
+
+The dataset utility tests now cover both supported directory layouts, loading
+from read-only split directories, preservation of existing file contents,
+suppression of DatasetCreator for existing data, explicit create-and-overwrite
+behavior, and descriptive errors for missing or invalid splits.
+
+The EfficientNet-2D hyperparameter-search orchestration test now executes two
+simulated Optuna trials. It verifies that dataset preparation occurs only once
+before optimization and that both trials receive the same dataset root with
+dataset_mode set to existing.
+
+All tests use pytest temporary directories and mocks. They do not access shared
+storage, generate real TorchSig samples, or train a model.
+
+Testing
+=======
+
+- Run the focused dataset and hyperparameter-search tests.
+- Run the complete pytest suite.
+- Run Ruff and git diff whitespace validation on the changed files.

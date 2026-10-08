@@ -20,6 +20,7 @@ lightning_logs/
 **.p
 **.png
 **.txt
+!48_mr_description.txt
 **.npy
 **.jpg
 **.pt*
