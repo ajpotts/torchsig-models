@@ -5,6 +5,7 @@ Summary
 - Default the packaged EfficientNet-1D configurations to bf16 mixed precision.
 - Preserve 32-bit precision for callers using older parameter dictionaries.
 - Expose explicit 32-true, 16-mixed, and bf16-mixed CLI overrides.
+- Add a repeatable optional mixed-precision GPU benchmark.
 
 Motivation
 ==========
@@ -41,16 +42,43 @@ Testing
 Performance benchmark
 =====================
 
-An optional benchmark is provided at
-benchmarks/optional/benchmark_mixed_precision.py. It runs the same
-EfficientNet-1D model, synthetic dataset, seed, batch size, and epoch count with
-32-true, 16-mixed, and bf16-mixed. It reports median fit throughput, peak
-allocated GPU memory, final validation accuracy, hardware and software
-versions, and relative results against 32-true. It uses discarded warm-up runs
-and multiple measured trials so initialization does not dominate the result.
+The optional benchmarks/optional/benchmark_mixed_precision.py script runs the
+same EfficientNet-1D model, synthetic dataset, seed, batch size, and epoch count
+with all three precision modes. It reports median fit throughput, peak allocated
+GPU memory, final validation accuracy, environment metadata, and relative
+results against 32-true.
 
-No suitable GPU was available in the development environment, so benchmark
-numbers are intentionally not included here. Running the benchmark is
-recommended because mixed-precision speedups and bf16 support are
-hardware-dependent, and the accuracy comparison is needed to detect numerical
-regressions.
+The benchmark was run before and after the MR on an NVIDIA GeForce RTX 4050
+Laptop GPU with CUDA 13.0, PyTorch 2.14.0, and PyTorch Lightning 2.6.6. Each
+result is the median of three measured EfficientNet-B0 runs after one discarded
+warm-up run. Each run used 2,048 training samples, 512 validation samples, a
+batch size of 64, and three epochs.
+
+After MR:
+
+| Precision | Samples/s | Peak memory | Validation accuracy | vs. 32-true |
+|-----------|----------:|------------:|--------------------:|------------:|
+| 32-true | 272.88 | 4,209,691,648 bytes | 70.31% | baseline |
+| 16-mixed | 537.58 | 2,240,914,944 bytes | 23.24% | 1.97x throughput, 46.77% less memory |
+| bf16-mixed | 457.69 | 2,240,913,408 bytes | 99.61% | 1.68x throughput, 46.77% less memory |
+
+Before MR:
+
+| Precision | Samples/s | Peak memory | Validation accuracy |
+|-----------|----------:|------------:|--------------------:|
+| 32-true | 274.07 | 4,209,691,648 bytes | 70.31% |
+| 16-mixed | 540.83 | 2,240,914,944 bytes | 23.24% |
+| bf16-mixed | 454.75 | 2,240,913,408 bytes | 99.61% |
+
+The before/after throughput differences are all below 0.7%, and memory and
+accuracy are unchanged. This is expected because the benchmark explicitly
+passes each precision to the shared trainer, where precision support already
+existed; this MR exposes that support through the EfficientNet-1D entry point,
+CLI, and packaged defaults.
+
+On this hardware, bf16-mixed is the recommended default: it substantially
+improves throughput and memory use without an accuracy regression in this
+benchmark. Although 16-mixed is faster, its 47.07 percentage-point accuracy
+drop makes it unsuitable here without additional numerical-stability tuning.
+The synthetic three-epoch accuracy values are regression indicators rather
+than production task-quality estimates.
