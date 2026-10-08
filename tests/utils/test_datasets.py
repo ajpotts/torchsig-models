@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 from torch.utils.data import RandomSampler, SequentialSampler, TensorDataset
 
@@ -249,6 +250,74 @@ def test_prepare_torchsig_datasets_uses_expected_samplers_and_seed(tmp_path):
         assert torch.equal(
             torch.cat([batch[0] for batch in loader]),
             expected_order,
+        )
+
+
+@patch("torchsig_models.utils.datasets.torch.cuda.is_available", return_value=True)
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets._create_static_dataset")
+def test_prepare_torchsig_datasets_configures_multi_worker_loaders(
+    create_static_dataset,
+    dataloader_cls,
+    cuda_available,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    create_static_dataset.return_value = (MagicMock(), ["class_a", "class_b"])
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+
+    prepare_torchsig_datasets(
+        cfg,
+        cfg,
+        cfg,
+        dataset_root=tmp_path,
+        num_workers=4,
+    )
+
+    cuda_available.assert_called_once_with()
+    for loader_call in dataloader_cls.call_args_list:
+        assert loader_call.kwargs["num_workers"] == 4
+        assert loader_call.kwargs["pin_memory"] is True
+        assert loader_call.kwargs["persistent_workers"] is True
+
+
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets._create_static_dataset")
+def test_prepare_torchsig_datasets_disables_persistence_without_workers(
+    create_static_dataset,
+    dataloader_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    create_static_dataset.return_value = (MagicMock(), ["class_a", "class_b"])
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+
+    prepare_torchsig_datasets(
+        cfg,
+        cfg,
+        cfg,
+        dataset_root=tmp_path,
+        num_workers=0,
+        pin_memory=False,
+        persistent_workers=True,
+    )
+
+    for loader_call in dataloader_cls.call_args_list:
+        assert loader_call.kwargs["num_workers"] == 0
+        assert loader_call.kwargs["pin_memory"] is False
+        assert loader_call.kwargs["persistent_workers"] is False
+
+
+def test_prepare_torchsig_datasets_rejects_negative_workers(tmp_path):
+    cfg = DummyConfig()
+
+    with pytest.raises(ValueError, match="num_workers"):
+        prepare_torchsig_datasets(
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path,
+            num_workers=-1,
         )
 
 

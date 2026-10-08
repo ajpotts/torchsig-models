@@ -141,6 +141,9 @@ def train_efficientnet_iq(
     logger: Logger | bool | None = True,
     accelerator: str = "gpu",
     devices: int | str | list[int] = 1,
+    num_workers: int = 0,
+    pin_memory: bool | None = None,
+    persistent_workers: bool | None = None,
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-1D IQ classifier.
 
@@ -158,6 +161,15 @@ def train_efficientnet_iq(
         model_name: EfficientNet architecture to train.
         signal_generators: Signal generator selection passed to dataset
             preparation.
+        logger: Lightning logger configuration passed to the shared training
+            utility.
+        accelerator: Lightning accelerator used for training.
+        devices: Lightning device selection used for training.
+        num_workers: Number of worker processes used by data loaders.
+        pin_memory: Whether data loaders pin host memory. If omitted, pinning
+            is enabled when CUDA is available.
+        persistent_workers: Whether data-loader workers remain alive between
+            epochs. If omitted, enabled whenever ``num_workers`` is positive.
 
 
     Returns:
@@ -183,6 +195,9 @@ def train_efficientnet_iq(
         batch_size=params["batch_size"],
         overwrite=overwrite,
         signal_generators=signal_generators,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     module_logger.info("Datasets ready.")
 
@@ -360,6 +375,27 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="Number of data-loader worker processes.",
+    )
+
+    parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Pin data-loader host memory (defaults to enabled with CUDA).",
+    )
+
+    parser.add_argument(
+        "--persistent-workers",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Keep data-loader workers alive between epochs (defaults to enabled when workers are used).",
+    )
+
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Regenerate datasets.",
@@ -446,6 +482,9 @@ if __name__ == "__main__":
         metrics_dir=run_dir / "metrics",
         model_name=args.model,
         overwrite=args.overwrite,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_memory,
+        persistent_workers=args.persistent_workers,
     )
 
     module_logger.info(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")
