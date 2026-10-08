@@ -1,0 +1,46 @@
+Summary
+=======
+
+- Add an explicit existing-dataset mode that never enters TorchSig generation.
+- Resolve or generate static datasets once before starting an Optuna study.
+- Force every EfficientNet trial to reload the same static train, validation,
+  and test splits without constructing iterable generation datasets.
+- Add a CLI option for running searches against read-only existing datasets.
+
+Motivation
+==========
+
+EfficientNet hyperparameter searches previously allowed every trial to enter
+the dataset preparation workflow. Even with overwrite disabled, this added
+unnecessary setup work and made it difficult to guarantee that a search would
+only read from an existing, potentially read-only dataset directory.
+
+Implementation
+==============
+
+prepare_torchsig_datasets now accepts a dataset_mode policy. The default auto
+mode preserves the existing load-or-create behavior, create explicitly enters
+generation, and existing resolves the configured split paths and loads them
+without creating directories, iterable datasets, generation data loaders, or a
+DatasetCreator.
+
+The EfficientNet-1D and EfficientNet-2D training APIs forward this policy.
+Their hyperparameter-search entry points prepare the static splits once before
+Optuna starts, then force every trial to use existing mode. Trials may still
+select different batch sizes because each trial builds ordinary loaders over
+the same static files.
+
+Both search CLIs expose --existing-datasets. This option fails clearly when a
+split is missing and is mutually exclusive with --overwrite, allowing a study
+to run entirely against read-only data.
+
+Testing
+=======
+
+- Verify existing mode reports missing data without invoking generation or
+  creating dataset directories.
+- Verify unsupported dataset modes are rejected.
+- Verify each search prepares datasets once before optimization.
+- Verify every trial is forced to use existing static datasets.
+- Preserve coverage for existing nested and per-split dataset layouts, normal
+  generation, storage backends, and EfficientNet training orchestration.

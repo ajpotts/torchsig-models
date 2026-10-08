@@ -3,27 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
-import logging
 
 import optuna
 import yaml
 from dotenv import load_dotenv
 from pytorch_lightning.loggers import CSVLogger
-
 from torchsig.utils.yaml import load_config_from_yaml
+
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
     EfficientNet2DModelName,
+    _spectrogram_transforms,
     load_training_params,
     train_efficientnet_2d,
 )
+from torchsig_models.utils.datasets import prepare_torchsig_datasets
 from torchsig_models.utils.hyperparameter_search import (
     load_search_config,
     run_hyperparameter_optimization,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-length", type=int)
     parser.add_argument("--dataset-id")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--existing-datasets",
+        action="store_true",
+        help=(
+            "Require existing static train/validation/test datasets and never "
+            "attempt dataset generation."
+        ),
+    )
     parser.add_argument("--n-trials", type=int)
     parser.add_argument(
         "--env-file",
@@ -132,6 +141,8 @@ def parse_args() -> argparse.Namespace:
 
     if args.dataset_config is None and args.train_config is None:
         parser.error("one of --dataset-config or --train-config is required")
+    if args.overwrite and args.existing_datasets:
+        parser.error("--overwrite cannot be combined with --existing-datasets")
 
     return args
 
@@ -314,6 +325,22 @@ def main() -> None:
 
     optimization_dir = args.output_dir / train_cfg.dataset_id / model_name
 
+    # Resolve or create the static splits once. Individual trials reopen these
+    # same files with their selected batch size, but can never regenerate them.
+    prepare_torchsig_datasets(
+        train_cfg,
+        val_cfg,
+        test_cfg,
+        dataset_root=args.dataset_root,
+        batch_size=base_params.get("batch_size", 64),
+        overwrite=args.overwrite,
+        signal_generators=args.signal_generators,
+        transforms=_spectrogram_transforms(train_cfg),
+        dataset_mode=(
+            "existing" if getattr(args, "existing_datasets", False) else "auto"
+        ),
+    )
+
     def train_fn(
         params: dict[str, Any],
         trial_dir: Path,
@@ -363,6 +390,7 @@ def main() -> None:
             overwrite=args.overwrite,
             model_name=model_name,
             signal_generators=args.signal_generators,
+            dataset_mode="existing",
             logger=training_logger,
         )
 

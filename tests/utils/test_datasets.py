@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
 import numpy as np
+import pytest
 import torch
 from torch.utils.data import Dataset, RandomSampler, SequentialSampler, TensorDataset
 from torchsig.signals.signal_types import Signal
@@ -10,7 +10,6 @@ from torchsig.utils.file_handlers.homogeneous_hdf5 import (
     HomogeneousHDF5Reader,
     HomogeneousHDF5Writer,
 )
-
 
 from torchsig_models.utils.datasets import (
     _create_static_dataset,
@@ -343,6 +342,42 @@ def test_prepare_torchsig_datasets_rejects_negative_workers(tmp_path):
             dataset_root=tmp_path,
             num_workers=-1,
         )
+
+
+def test_prepare_torchsig_datasets_rejects_unknown_dataset_mode(tmp_path):
+    cfg = DummyConfig()
+
+    with pytest.raises(ValueError, match="dataset_mode"):
+        prepare_torchsig_datasets(
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path,
+            dataset_mode="invalid",
+        )
+
+
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
+def test_existing_dataset_mode_never_enters_generation(
+    iterable_dataset_cls,
+    dataset_creator_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+
+    with pytest.raises(FileNotFoundError, match="train dataset directory"):
+        prepare_torchsig_datasets(
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path,
+            dataset_mode="existing",
+        )
+
+    iterable_dataset_cls.assert_not_called()
+    dataset_creator_cls.assert_not_called()
+    assert not (tmp_path / cfg.dataset_id).exists()
 
 
 def test_prepare_torchsig_datasets_creates_root(tmp_path):

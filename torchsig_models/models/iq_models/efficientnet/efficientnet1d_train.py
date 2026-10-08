@@ -8,6 +8,7 @@ It can be imported as a library or executed as a command-line training script.
 """
 
 import argparse
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -15,8 +16,6 @@ from typing import Any, Literal
 import torch
 import yaml
 from pytorch_lightning.loggers import Logger
-import logging
-
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
 from torchsig.utils.yaml import load_config_from_yaml
@@ -26,7 +25,10 @@ from torchsig_models.models.iq_models.efficientnet import (
     efficientnet_b2,
     efficientnet_b4,
 )
-from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.datasets import (
+    DatasetMode,
+    prepare_torchsig_datasets,
+)
 from torchsig_models.utils.normalization import (
     compute_dataset_channel_stats,
     resolve_normalization_mode,
@@ -38,10 +40,9 @@ from torchsig_models.utils.training import (
     train_validate,
 )
 
-
 __all__ = [
-    "EfficientNetModelName",
     "MODEL_FACTORY",
+    "EfficientNetModelName",
     "load_training_params",
     "train_efficientnet_iq",
 ]
@@ -149,6 +150,7 @@ def train_efficientnet_iq(
     pin_memory: bool | None = None,
     persistent_workers: bool | None = None,
     precision: str | None = None,
+    dataset_mode: DatasetMode = "auto",
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-1D IQ classifier.
 
@@ -186,6 +188,8 @@ def train_efficientnet_iq(
         file_reader: Optional reader override paired with ``file_handler``.
         file_handler_options: Optional writer options overriding those in the
             dataset configuration.
+        dataset_mode: Dataset handling policy passed to dataset preparation.
+            Use ``"existing"`` to guarantee that generation is never invoked.
 
 
     Returns:
@@ -217,6 +221,7 @@ def train_efficientnet_iq(
         file_handler=file_handler,
         file_reader=file_reader,
         file_handler_options=file_handler_options,
+        dataset_mode=dataset_mode,
     )
     module_logger.info("Datasets ready.")
 

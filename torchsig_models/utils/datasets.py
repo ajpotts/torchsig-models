@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 import yaml
-
 from torchsig.datasets.datasets import (
     StaticTorchSigDataset,
     TorchSigDatasetConfig,
@@ -30,11 +29,14 @@ from torchsig.utils.file_handlers.homogeneous_hdf5 import (
 from torchsig.utils.file_handlers.packed_hdf5 import PackedHDF5Reader, PackedHDF5Writer
 from torchsig.utils.writer import DatasetCreator
 
-
 __all__ = [
+    "DatasetMode",
     "prepare_torchsig_datasets",
     "prepare_torchsig_inference_dataset",
 ]
+
+
+DatasetMode = Literal["auto", "create", "existing"]
 
 
 def _dataset_metadata(
@@ -213,6 +215,23 @@ def _existing_split_roots(
     return None
 
 
+def _configured_split_roots(
+    dataset_root: Path,
+    configs: tuple[
+        TorchSigDatasetConfig,
+        TorchSigDatasetConfig,
+        TorchSigDatasetConfig,
+    ],
+) -> tuple[Path, Path, Path]:
+    """Return the split roots implied by the dataset configurations."""
+    dataset_ids = tuple(cfg.dataset_id for cfg in configs)
+    if len(set(dataset_ids)) > 1:
+        return tuple(dataset_root / dataset_id for dataset_id in dataset_ids)
+
+    root = dataset_root / dataset_ids[0]
+    return tuple(root / split for split in ("train", "val", "test"))
+
+
 def _loader_generator(seed: int) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
@@ -233,6 +252,7 @@ def prepare_torchsig_datasets(
     file_handler: type[FileWriter] | None = None,
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
+    dataset_mode: DatasetMode = "auto",
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -242,8 +262,8 @@ def prepare_torchsig_datasets(
     """Load or generate static TorchSig datasets and return split dataloaders.
 
     Existing datasets may either use ``<dataset_id>/<split>`` directories or
-    one directory per split configuration's dataset ID. When ``overwrite`` is
-    false, an existing layout is loaded without invoking dataset creation.
+    one directory per split configuration's dataset ID. ``dataset_mode`` can
+    require loading existing data without entering the generation workflow.
 
     Args:
         train_cfg: Configuration for the training split.
@@ -271,6 +291,11 @@ def prepare_torchsig_datasets(
             file handler. When omitted, ``cfg.file_writer_kwargs`` (the
             dataset YAML's ``storage.options`` field) is used. Homogeneous HDF5
             requires every top-level sample to have the same shape and dtype.
+        dataset_mode: Dataset handling policy. ``"auto"`` preserves the
+            legacy behavior of loading a detected layout when ``overwrite`` is
+            false and generating otherwise. ``"create"`` always enters the
+            generation workflow. ``"existing"`` only loads configured split
+            directories and never constructs generation datasets or loaders.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -278,13 +303,15 @@ def prepare_torchsig_datasets(
     Raises:
         FileNotFoundError: If an existing split layout is incomplete.
         ValueError: If an existing split cannot be loaded by its configured
-            storage reader.
+            storage reader, or if ``dataset_mode`` is unsupported.
     """
     dataset_root = Path(dataset_root)
     root = dataset_root / train_cfg.dataset_id
 
     if num_workers < 0:
         raise ValueError("num_workers must be greater than or equal to zero.")
+    if dataset_mode not in ("auto", "create", "existing"):
+        raise ValueError("dataset_mode must be one of 'auto', 'create', or 'existing'.")
 
     if pin_memory is None:
         pin_memory = torch.cuda.is_available()
@@ -299,7 +326,12 @@ def prepare_torchsig_datasets(
 
     configs = (train_cfg, val_cfg, test_cfg)
     split_names = ("train", "val", "test")
-    existing_roots = None if overwrite else _existing_split_roots(dataset_root, configs)
+    if dataset_mode == "existing":
+        existing_roots = _configured_split_roots(dataset_root, configs)
+    elif dataset_mode == "create" or overwrite:
+        existing_roots = None
+    else:
+        existing_roots = _existing_split_roots(dataset_root, configs)
     if existing_roots is not None:
         loaded = tuple(
             _load_existing_dataset(cfg, split, split_root, file_reader)
