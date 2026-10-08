@@ -132,6 +132,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
     assert training_call["num_classes"] == 3
     assert training_call["accelerator"] == "cpu"
     assert training_call["devices"] == 1
+    assert training_call["precision"] == "32-true"
 
     evaluate_classifier.assert_called_once_with(
         model=model,
@@ -145,3 +146,116 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
     assert result["num_params"] == 15
     assert result["metrics"] is metrics_callback
     assert result["data_info"] is data_info
+
+
+@pytest.mark.parametrize("precision", ["32-true", "16-mixed", "bf16-mixed"])
+def test_train_efficientnet_iq_forwards_precision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    precision: str,
+) -> None:
+    """Forward each supported precision mode to the shared trainer."""
+    cfg = SimpleNamespace(seed=11)
+    params = {
+        "batch_size": 2,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "max_epochs": 1,
+        "normalization": "none",
+    }
+    loaders = ([object()], [object()], [object()])
+    monkeypatch.setattr(
+        training_module,
+        "prepare_torchsig_datasets",
+        MagicMock(return_value=(*loaders, {"class_names": ["a", "b"]})),
+    )
+    monkeypatch.setitem(
+        training_module.MODEL_FACTORY,
+        "efficientnet_b0",
+        MagicMock(return_value=torch.nn.Linear(4, 2)),
+    )
+    train_validate = MagicMock(
+        return_value=(SimpleNamespace(model=torch.nn.Linear(4, 2)), MagicMock())
+    )
+    monkeypatch.setattr(training_module, "train_validate", train_validate)
+    test_metrics = MagicMock()
+    monkeypatch.setattr(
+        training_module, "evaluate_classifier", MagicMock(return_value=test_metrics)
+    )
+    monkeypatch.setattr(training_module, "set_deterministic", MagicMock())
+
+    train_efficientnet_iq(
+        train_cfg=cfg,
+        val_cfg=cfg,
+        test_cfg=cfg,
+        params=params,
+        checkpoint_dir=tmp_path / "checkpoints",
+        model_name="efficientnet_b0",
+        accelerator="cpu",
+        precision=precision,
+    )
+
+    assert train_validate.call_args.kwargs["precision"] == precision
+
+
+def test_train_efficientnet_iq_uses_precision_from_params(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Use the parameter-file precision when no API override is supplied."""
+    cfg = SimpleNamespace(seed=11)
+    params = {
+        "batch_size": 2,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "max_epochs": 1,
+        "normalization": "none",
+        "precision": "bf16-mixed",
+    }
+    loaders = ([object()], [object()], [object()])
+    monkeypatch.setattr(
+        training_module,
+        "prepare_torchsig_datasets",
+        MagicMock(return_value=(*loaders, {"class_names": ["a", "b"]})),
+    )
+    monkeypatch.setitem(
+        training_module.MODEL_FACTORY,
+        "efficientnet_b0",
+        MagicMock(return_value=torch.nn.Linear(4, 2)),
+    )
+    train_validate = MagicMock(
+        return_value=(SimpleNamespace(model=torch.nn.Linear(4, 2)), MagicMock())
+    )
+    monkeypatch.setattr(training_module, "train_validate", train_validate)
+    monkeypatch.setattr(
+        training_module,
+        "evaluate_classifier",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(training_module, "set_deterministic", MagicMock())
+
+    train_efficientnet_iq(
+        train_cfg=cfg,
+        val_cfg=cfg,
+        test_cfg=cfg,
+        params=params,
+        checkpoint_dir=tmp_path / "checkpoints",
+        model_name="efficientnet_b0",
+        accelerator="cpu",
+    )
+
+    assert train_validate.call_args.kwargs["precision"] == "bf16-mixed"
+
+
+@pytest.mark.parametrize("precision", ["32-true", "16-mixed", "bf16-mixed"])
+def test_parse_args_accepts_precision(
+    monkeypatch: pytest.MonkeyPatch,
+    precision: str,
+) -> None:
+    """Accept all documented precision modes on the command line."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["efficientnet1d_train.py", "--precision", precision],
+    )
+
+    assert parse_args().precision == precision
