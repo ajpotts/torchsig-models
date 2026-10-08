@@ -1,0 +1,34 @@
+Title: Configure EfficientNet-1D training data loaders for GPU throughput
+
+Criticality: High
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+prepare_torchsig_datasets constructs the train, validation, and test loaders
+without setting num_workers, pin_memory, or persistent_workers. The resulting
+num_workers=0 default performs all static-dataset reads and collation in the
+training process and can leave the GPU idle between batches.
+
+Evidence:
+- torchsig_models/utils/datasets.py, prepare_torchsig_datasets
+- torchsig_models/utils/datasets.py, prepare_torchsig_inference_dataset already
+  exposes num_workers and pin_memory
+- torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py calls
+  prepare_torchsig_datasets without loader-performance options
+
+Proposed resolution:
+Add configurable num_workers, pin_memory, and persistent_workers options to
+prepare_torchsig_datasets and the EfficientNet-1D training entry point. Choose
+safe defaults, enable persistent workers only when num_workers is greater than
+zero, and preserve deterministic worker seeding. Consider exposing prefetch_factor
+when profiling shows it is useful.
+
+Acceptance criteria:
+- Training, validation, and test loader worker counts are configurable.
+- Pinning can be enabled for CUDA training and disabled for CPU-only runs.
+- persistent_workers is never passed as true when num_workers is zero.
+- Existing deterministic worker seeding behavior is preserved.
+- Tests cover zero-worker and multi-worker loader configuration.
+- A documented benchmark compares examples per second and GPU utilization
+  before and after the change.

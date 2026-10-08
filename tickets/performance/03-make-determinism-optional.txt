@@ -1,0 +1,31 @@
+Title: Make deterministic execution optional for faster training
+
+Criticality: High
+Estimated effort: Low
+Type: Performance improvement
+
+Description:
+EfficientNet-1D training always calls set_deterministic. That helper requests
+deterministic PyTorch algorithms, enables deterministic cuDNN behavior, and
+disables cuDNN benchmarking. These settings are valuable for reproducibility
+but can prevent cuDNN from selecting the fastest convolution algorithms.
+
+Evidence:
+- torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py calls
+  set_deterministic unconditionally
+- torchsig_models/utils/training.py, configure_determinism sets
+  cudnn.deterministic=True and cudnn.benchmark=False
+
+Proposed resolution:
+Add an explicit deterministic training option. Preserve seeded random number
+generators in both modes, but when deterministic execution is disabled, do not
+request deterministic algorithms and allow cuDNN benchmarking on CUDA. Clearly
+document the reproducibility/performance tradeoff.
+
+Acceptance criteria:
+- Callers can explicitly select deterministic or performance-oriented mode.
+- Deterministic mode retains the current algorithm and cuDNN settings.
+- Performance mode permits nondeterministic algorithms and cuDNN benchmarking.
+- Unit tests verify both configurations without requiring a GPU.
+- Logs record the selected mode.
+- A GPU benchmark quantifies the throughput difference.

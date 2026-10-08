@@ -1,0 +1,36 @@
+Title: Reduce per-epoch metric and validation overhead for EfficientNet-1D
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+ClassifierMetricsTrackerCallback tracks accuracy, F1, precision, recall, and a
+confusion matrix for both training and validation, synchronizes distributed
+metric state, and writes metric CSV files at epoch end. Validation also runs
+every epoch. This is useful for final experiments but can consume a meaningful
+fraction of short trials and hyperparameter searches.
+
+Evidence:
+- torchsig_models/utils/classifier_metrics_tracker.py,
+  ClassifierMetricsTrackerCallback
+- torchsig_models/utils/training.py always attaches the full callback
+- ClassifierMetricsTrackerCallback saves both train and validation CSV output
+  from epoch-end hooks when metrics_dir is configured
+
+Proposed resolution:
+Introduce a configurable lightweight metric profile for exploratory and search
+runs. Allow callers to disable selected train metrics and confusion matrices,
+control CSV save frequency, and configure validation frequency while retaining
+the validation metric required by checkpointing. Keep the full profile for
+final reporting.
+
+Acceptance criteria:
+- Callers can choose full and lightweight metric profiles.
+- Lightweight mode retains the metric monitored by ModelCheckpoint whenever
+  checkpointing is enabled.
+- CSV writes and confusion-matrix computation can be reduced independently.
+- Validation frequency is configurable through the training entry point.
+- Existing full-profile metric values and output formats remain compatible.
+- Tests cover checkpoint monitoring and output behavior in both profiles.
+- A short-trial benchmark measures wall-clock overhead before and after.

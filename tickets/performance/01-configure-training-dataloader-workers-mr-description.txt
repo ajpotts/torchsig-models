@@ -1,0 +1,45 @@
+Summary
+=======
+
+- Make TorchSig training loader worker counts configurable.
+- Automatically enable pinned memory when CUDA is available.
+- Keep workers alive between epochs for multi-worker configurations.
+- Expose the loader settings through the EfficientNet-1D Python API and CLI.
+
+Motivation
+==========
+
+EfficientNet-1D training previously constructed its train, validation, and test
+loaders with the PyTorch defaults: no worker processes, no pinned host memory,
+and no persistent workers. Dataset reads and collation could therefore stall
+the training process and leave the GPU waiting between batches.
+
+Implementation
+==============
+
+prepare_torchsig_datasets now accepts num_workers, pin_memory, and
+persistent_workers. Pinning defaults to CUDA availability. Persistent workers
+default to enabled when one or more workers are requested and are forced off
+for the zero-worker case required by PyTorch.
+
+train_efficientnet_iq forwards the same settings, and its CLI exposes
+--num-workers, --[no-]pin-memory, and --[no-]persistent-workers. The existing
+zero-worker behavior remains the API and CLI default, allowing users to select
+a worker count appropriate for their host and dataset.
+
+Testing
+=======
+
+- Verify multi-worker loaders receive worker, pinning, and persistence options.
+- Verify persistent workers are disabled when num_workers=0.
+- Verify negative worker counts are rejected.
+- Verify EfficientNet-1D training forwards all loader options.
+- Verify CLI parsing for the new loader options.
+
+Performance validation
+======================
+
+No hardware-specific throughput result is asserted by the unit suite. A GPU
+benchmark should compare examples per second and GPU utilization with
+--num-workers 0 and increasing worker counts (for example 2, 4, and 8) on the
+target training system.
