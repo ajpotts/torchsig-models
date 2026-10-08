@@ -19,8 +19,8 @@ and recorded rather than assumed. Spectrogram XCiT and DETR should include the
 same explicit precision policy when supported training entry points are added.
 
 Evidence:
-- tickets/performance/02-enable-mixed-precision-training.txt defines the
-  EfficientNet-1D precision requirements
+- EfficientNet-1D training already exposes Lightning precision through its
+  API, CLI, and packaged training parameters
 - torchsig_models/utils/training.py accepts a Lightning precision value and
   forwards it to pytorch_lightning.Trainer
 - torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py

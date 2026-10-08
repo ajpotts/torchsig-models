@@ -20,8 +20,8 @@ DETR should receive the same controls when supported training entry points are
 added.
 
 Evidence:
-- tickets/performance/01-configure-training-dataloader-workers.txt defines the
-  EfficientNet-1D loader-control requirements
+- EfficientNet-1D training already exposes num_workers, pin_memory, and
+  persistent_workers through its API and CLI
 - torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
   calls prepare_torchsig_datasets without loader-performance arguments
 - torchsig_models/models/iq_models/xcit/xcit1d_train.py hard-codes
@@ -58,4 +58,3 @@ Acceptance criteria:
   training path and verify forwarding for framework-managed adapters.
 - Representative benchmarks report examples per second and GPU utilization
   for each model family before and after loader tuning.
-
