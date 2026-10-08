@@ -1,0 +1,43 @@
+Title: Reuse normalization statistics across all applicable model families
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+The normalization-statistics cache proposed for EfficientNet-1D should serve
+every model path that computes dataset statistics. EfficientNet-2D applies a
+spectrogram transform before normalization, while future or framework-managed
+models may normalize different channel layouts. A representation-aware shared
+cache avoids repeated dataset scans without mixing incompatible values.
+
+Evidence:
+- tickets/performance/07-cache-normalization-statistics.txt defines cache
+  identity, invalidation, and correctness requirements
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+  uses compute_dataset_channel_stats after spectrogram transformation
+- model families consume IQ, spectrogram, and framework-specific image
+  representations with different channel semantics
+
+Proposed resolution:
+Move cache behavior into the shared normalization/data preparation layer and
+adopt it in every training path that computes dataset-level statistics. Include
+the model input representation, ordered transforms, channel layout, split, and
+normalization semantics in cache identity. Audit framework-managed pipelines;
+use the shared cache only when their preprocessing permits exact compatible
+statistics and document framework-owned normalization otherwise.
+
+Acceptance criteria:
+- EfficientNet-2D reuses valid cached statistics without rescanning samples.
+- IQ XCiT, YOLO, Anomalib, and future training paths are audited and either use
+  the cache when applicable or document why dataset statistics are not used.
+- Cache identity separates IQ, spectrogram, and other transformed views of the
+  same underlying dataset.
+- Dataset or transform changes invalidate cached values.
+- Cached dtype and channel order match freshly computed values within
+  documented tolerances.
+- Tests cover cross-representation isolation, hits, misses, invalidation, and
+  malformed data.
+- Logs identify whether statistics were loaded, computed, or managed by an
+  external framework.
+

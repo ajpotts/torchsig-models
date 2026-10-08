@@ -1,0 +1,43 @@
+Title: Evaluate optional compilation for all model families
+
+Criticality: Medium
+Estimated effort: High
+Type: Performance improvement
+
+Description:
+The optional torch.compile path proposed for EfficientNet-1D should be
+evaluated for every PyTorch model family. Compilation gains and graph breaks
+differ for transformer, two-dimensional convolution, detection, and anomaly
+detection workloads, and framework-managed trainers may already compile or
+wrap models in ways that constrain direct use of torch.compile.
+
+Evidence:
+- tickets/performance/05-add-torch-compile-option.txt defines the
+  EfficientNet-1D compile controls and benchmark requirements
+- EfficientNet-2D uses the shared Lightning training path
+- IQ XCiT constructs its model and Lightning Trainer directly
+- YOLO and Anomalib own portions of model construction and training through
+  their respective frameworks
+
+Proposed resolution:
+Add a consistent opt-in compile setting to native EfficientNet-2D and IQ XCiT
+training paths, including configurable compile mode and clear failures. Audit
+YOLO and Anomalib for supported framework-native compilation controls rather
+than bypassing their lifecycle. Record graph breaks and effective settings,
+keep eager execution as the compatible fallback, and apply the same policy to
+future model training entry points.
+
+Acceptance criteria:
+- Native model training can enable or disable compilation without changing
+  model factories.
+- Compile mode and effective compile status are recorded in logs or metadata.
+- Unsupported framework/model combinations fail clearly or use an explicitly
+  requested eager fallback; fallback is never silent.
+- Tests verify option plumbing without performing a costly real compilation.
+- Benchmarks report compile time, first-epoch time, steady-state epoch time,
+  total run time, peak memory, and graph breaks for each model family.
+- Compiled and eager outputs agree within model- and precision-appropriate
+  tolerances, and checkpoint save/load remains compatible.
+- Eager mode remains the default for each family until its own results justify
+  a change.
+

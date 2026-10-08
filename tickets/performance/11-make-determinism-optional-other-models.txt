@@ -1,0 +1,44 @@
+Title: Extend optional deterministic execution to all model families
+
+Criticality: High
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+The deterministic/performance mode proposed for EfficientNet-1D should be
+available consistently across every training path. EfficientNet-2D also calls
+the shared deterministic setup, while IQ XCiT and framework-managed YOLO and
+Anomalib training have separate or implicit reproducibility behavior. Without
+one explicit policy, model benchmarks can unknowingly compare different cuDNN
+and algorithm settings.
+
+Evidence:
+- tickets/performance/03-make-determinism-optional.txt defines the
+  EfficientNet-1D deterministic-mode requirements
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+  uses the shared set_deterministic helper
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py does not expose a
+  deterministic execution choice
+- torchsig_models/adapters/yolo_train_detector.py configures the environment
+  for Ultralytics deterministic execution but does not expose the choice
+
+Proposed resolution:
+Define a common deterministic/performance policy and expose it through every
+native training API, CLI, and applicable configuration file. Forward equivalent
+settings to framework-managed trainers where supported, retain seeded random
+number generators in both modes, and record the effective algorithm, cuDNN,
+and framework settings. Add the option to future model training entry points.
+
+Acceptance criteria:
+- EfficientNet-2D and IQ XCiT expose deterministic and performance modes.
+- YOLO and Anomalib expose equivalent framework controls where supported and
+  document any settings that cannot be controlled.
+- Deterministic mode preserves reproducible algorithm settings and performance
+  mode permits model-appropriate optimized kernels.
+- The effective mode and relevant backend settings are recorded in run logs.
+- Tests verify option forwarding and backend configuration without a GPU.
+- Repeated seeded tests document the reproducibility guarantees of each model
+  family and framework.
+- Representative GPU benchmarks quantify throughput for both modes for each
+  supported model family.
+

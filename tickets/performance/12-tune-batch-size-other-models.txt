@@ -1,0 +1,42 @@
+Title: Establish batch-size tuning guidance for all model families
+
+Criticality: Medium
+Estimated effort: High
+Type: Performance investigation
+
+Description:
+The EfficientNet-1D batch-size investigation should be expanded to the other
+model families. IQ XCiT, EfficientNet-2D, YOLO, and Anomalib have different
+activation-memory behavior, input representations, and framework defaults, so
+EfficientNet-1D measurements cannot safely determine their batch sizes.
+
+Evidence:
+- tickets/performance/04-tune-efficientnet1d-batch-size.txt defines the
+  EfficientNet-1D benchmark and reporting requirements
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py fixes batch_size=64
+- torchsig_models/adapters/yolo_train_detector.py fixes batch=32
+- EfficientNet-2D packaged training parameters use fixed batch sizes while
+  spectrogram dimensions affect activation memory
+
+Proposed resolution:
+Benchmark supported model variants over representative input dimensions,
+precision modes, and batch sizes. Include framework-managed model families and
+future XCiT-spectrogram and DETR training paths when available. Publish
+per-family guidance for selecting a stable batch size, scaling learning rate,
+and using gradient accumulation. Change defaults only with model-specific
+benchmark and convergence evidence.
+
+Acceptance criteria:
+- Results cover IQ XCiT, EfficientNet-2D, YOLO, and supported Anomalib models.
+- Each result reports throughput, GPU utilization, peak allocated memory,
+  input dimensions, precision, GPU model, and software versions.
+- Guidance distinguishes physical batch size from effective batch size when
+  gradient accumulation is used.
+- Any changed default completes a representative training smoke test without
+  out-of-memory errors or material accuracy regression.
+- Framework auto-batch behavior, when used, is documented and reproducible.
+- Future model families adopt the same benchmark method before defaults are
+  selected.
+- No model default is changed solely on evidence from another architecture or
+  input representation.
+

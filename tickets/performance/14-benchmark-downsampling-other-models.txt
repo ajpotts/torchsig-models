@@ -1,0 +1,42 @@
+Title: Benchmark input and feature downsampling across other model families
+
+Criticality: Medium
+Estimated effort: High
+Type: Performance investigation
+
+Description:
+The EfficientNet-1D temporal-downsampling investigation should be complemented
+by model-appropriate input reduction studies for other families. IQ XCiT can
+reduce token sequence length, spectrogram classifiers and detectors can reduce
+time/frequency resolution or patch count, and anomaly models may reduce image
+resolution. These choices can improve throughput and memory use but may erase
+short, narrowband, or small-object features.
+
+Evidence:
+- tickets/performance/06-benchmark-temporal-downsampling.txt defines the
+  EfficientNet-1D quality and performance comparison
+- torchsig_models/models/iq_models/xcit/xcit1d.py tokenizes long IQ inputs
+- EfficientNet-2D, YOLO, and Anomalib consume image-like spectrogram inputs
+  whose dimensions directly affect compute and activation memory
+
+Proposed resolution:
+For each model family, identify the supported reduction control: signal-domain
+resampling or token stride for IQ XCiT; FFT, hop, image, patch, or feature-map
+resolution for spectrogram models. Benchmark only semantically valid settings,
+with suitable anti-aliasing and label/box transformations. Treat changes that
+alter learned representations or checkpoint shapes as new configurations.
+
+Acceptance criteria:
+- At least the current setting and one reduced-compute setting are compared
+  for every supported model family with an applicable control.
+- Results include throughput, peak memory, parameter count or FLOPs, and
+  task-appropriate validation/test metrics.
+- Signal resampling documents anti-aliasing, and image resizing documents how
+  annotations and small targets are preserved.
+- Public controls validate their values and have output-shape tests.
+- Checkpoint and configuration compatibility are documented.
+- Models without a meaningful downsampling control are explicitly excluded
+  with rationale rather than given an artificial common setting.
+- No reduced-resolution setting becomes a default without a model-specific
+  accuracy tradeoff assessment.
+

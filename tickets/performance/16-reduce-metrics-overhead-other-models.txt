@@ -1,0 +1,42 @@
+Title: Reduce metrics and validation overhead across all model families
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+The configurable metric profiles proposed for EfficientNet-1D should extend to
+all training paths. EfficientNet-2D shares metric utilities, IQ XCiT attaches
+the full classifier callback directly, and YOLO and Anomalib use framework-
+specific metrics, plots, validation schedules, and artifact writers. Their
+overhead can dominate short trials and hyperparameter searches.
+
+Evidence:
+- tickets/performance/08-reduce-epoch-metrics-overhead.txt defines full and
+  lightweight metric profiles and checkpoint-safety requirements
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py always attaches
+  ClassifierMetricsTrackerCallback and saves plots and CSV output
+- torchsig_models/adapters/yolo_train_detector.py always enables plots and
+  saves checkpoints every epoch
+- EfficientNet-2D uses the shared train_validate metric path
+
+Proposed resolution:
+Define common full and lightweight intent while mapping it to each framework's
+supported controls. Expose metric selection, confusion-matrix and plot output,
+artifact frequency, and validation frequency where possible. Preserve metrics
+required for checkpoint selection and early stopping, record effective
+settings, and add the same profiles to future model training entry points.
+
+Acceptance criteria:
+- EfficientNet-2D and IQ XCiT expose compatible full and lightweight profiles.
+- YOLO and Anomalib map those profiles to documented framework controls and
+  report any unavoidable metrics or validation passes.
+- Every profile retains metrics required by enabled checkpointing and early
+  stopping callbacks.
+- Confusion matrices, plots, and periodic artifact writes can be reduced where
+  the underlying framework supports it.
+- Existing full-profile metric values and artifact formats remain compatible.
+- Tests cover profile forwarding, checkpoint monitoring, and output behavior
+  for native and framework-managed paths.
+- Short-trial benchmarks report wall-clock and synchronization overhead before
+  and after for each model family.
