@@ -18,6 +18,7 @@ from pytorch_lightning.loggers import Logger
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.transforms.transforms import Spectrogram
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.spectrogram_models.efficientnet import (
@@ -170,6 +171,9 @@ def train_efficientnet_2d(
     overwrite: bool = False,
     model_name: EfficientNet2DModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] | None = None,
+    file_reader: type[FileReader] | None = None,
+    file_handler_options: dict[str, Any] | None = None,
     logger: Logger | bool | None = True,
     accelerator: str = "auto",
     devices: int | str | list[int] = "auto",
@@ -190,6 +194,11 @@ def train_efficientnet_2d(
         model_name: EfficientNet architecture to train.
         signal_generators: Signal generator selection passed to dataset
             preparation.
+        file_handler: Optional storage-writer override. By default, training
+            uses the backend declared by the dataset configuration.
+        file_reader: Optional reader override paired with ``file_handler``.
+        file_handler_options: Optional writer options overriding those in the
+            dataset configuration.
         logger: Lightning logger configuration passed to the shared training
             utility.
         accelerator: Lightning accelerator used for training.
@@ -224,6 +233,9 @@ def train_efficientnet_2d(
         overwrite=overwrite,
         signal_generators=signal_generators,
         transforms=transforms,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     class_list = data_info["class_names"]

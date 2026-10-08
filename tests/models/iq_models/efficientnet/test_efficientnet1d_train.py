@@ -111,6 +111,9 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         num_workers=4,
         pin_memory=True,
         persistent_workers=True,
+        file_handler=None,
+        file_reader=None,
+        file_handler_options=None,
     )
     model_factory.assert_called_once_with(
         num_classes=3,

@@ -18,6 +18,7 @@ from pytorch_lightning.loggers import Logger
 import logging
 
 from torchsig.datasets.datasets import TorchSigDatasetConfig
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.iq_models.efficientnet import (
@@ -138,6 +139,9 @@ def train_efficientnet_iq(
     overwrite: bool = False,
     model_name: EfficientNetModelName = "efficientnet_b4",
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] | None = None,
+    file_reader: type[FileReader] | None = None,
+    file_handler_options: dict[str, Any] | None = None,
     logger: Logger | bool | None = True,
     accelerator: str = "gpu",
     devices: int | str | list[int] = 1,
@@ -177,6 +181,11 @@ def train_efficientnet_iq(
             precision support. ``"bf16-mixed"`` is preferred on supported
             hardware, with ``"16-mixed"`` as the fallback for other CUDA GPUs.
             Use ``"32-true"`` for CPU training or numerical debugging.
+        file_handler: Optional storage-writer override. By default, training
+            uses the backend declared by the dataset configuration.
+        file_reader: Optional reader override paired with ``file_handler``.
+        file_handler_options: Optional writer options overriding those in the
+            dataset configuration.
 
 
     Returns:
@@ -205,6 +214,9 @@ def train_efficientnet_iq(
         num_workers=num_workers,
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
     module_logger.info("Datasets ready.")
 

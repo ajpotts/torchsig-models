@@ -20,6 +20,13 @@ from torchsig.transforms.transforms import (
 )
 from torchsig.utils.data_loading import WorkerSeedingDataLoader
 from torchsig.utils.defaults import TorchSigDefaults
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
+from torchsig.utils.file_handlers.hdf5 import HDF5Reader, HDF5Writer
+from torchsig.utils.file_handlers.homogeneous_hdf5 import (
+    HomogeneousHDF5Reader,
+    HomogeneousHDF5Writer,
+)
+from torchsig.utils.file_handlers.packed_hdf5 import PackedHDF5Reader, PackedHDF5Writer
 from torchsig.utils.writer import DatasetCreator
 
 
@@ -68,9 +75,25 @@ def _create_static_dataset(
     overwrite: bool,
     *,
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] | None = None,
+    file_reader: type[FileReader] | None = None,
+    file_handler_options: dict[str, Any] | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
+    configured_backend = getattr(cfg, "file_writer_name", "legacy")
+    backend_pairs = {
+        "legacy": (HDF5Writer, HDF5Reader),
+        "packed": (PackedHDF5Writer, PackedHDF5Reader),
+        "homogeneous": (HomogeneousHDF5Writer, HomogeneousHDF5Reader),
+    }
+    if configured_backend not in backend_pairs:
+        raise ValueError(f"Unsupported dataset storage backend: {configured_backend!r}")
+    configured_writer, configured_reader = backend_pairs[configured_backend]
+    file_handler = configured_writer if file_handler is None else file_handler
+    file_reader = configured_reader if file_reader is None else file_reader
+    if file_handler_options is None:
+        file_handler_options = dict(getattr(cfg, "file_writer_kwargs", {}))
 
     iterable_dataset = TorchSigIterableDataset(
         metadata=_dataset_metadata(cfg),
@@ -93,11 +116,15 @@ def _create_static_dataset(
         root=str(split_root),
         overwrite=overwrite,
         dataset_length=int(cfg.dataset_length),
+        file_handler=file_handler,
+        file_reader=file_reader,
+        **file_handler_options,
     )
     creator.create()
 
     static_dataset = StaticTorchSigDataset(
         root=str(split_root),
+        file_handler_class=file_reader,
         target_labels=getattr(
             cfg,
             "target_labels",
@@ -125,6 +152,9 @@ def prepare_torchsig_datasets(
     num_workers: int = 0,
     pin_memory: bool | None = None,
     persistent_workers: bool | None = None,
+    file_handler: type[FileWriter] | None = None,
+    file_reader: type[FileReader] | None = None,
+    file_handler_options: dict[str, Any] | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -150,6 +180,15 @@ def prepare_torchsig_datasets(
             epochs. If omitted, persistence is enabled when ``num_workers`` is
             greater than zero. It is always disabled when ``num_workers`` is
             zero.
+        file_handler: Optional writer override. When omitted, the backend is
+            selected from ``cfg.file_writer_name`` (the dataset YAML's
+            ``storage.writer`` field).
+        file_reader: Optional reader override paired with ``file_handler``.
+            When omitted, the reader matching the configured backend is used.
+        file_handler_options: Optional keyword arguments forwarded to the
+            file handler. When omitted, ``cfg.file_writer_kwargs`` (the
+            dataset YAML's ``storage.options`` field) is used. Homogeneous HDF5
+            requires every top-level sample to have the same shape and dtype.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -179,6 +218,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     val_dataset, _ = _create_static_dataset(
@@ -189,6 +231,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     test_dataset, _ = _create_static_dataset(
@@ -199,6 +244,9 @@ def prepare_torchsig_datasets(
         batch_size,
         overwrite,
         signal_generators=signal_generators,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
     )
 
     return (
