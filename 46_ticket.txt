@@ -1,0 +1,40 @@
+Description
+Currently, prepare_torchsig_datasets() assumes datasets are organized into train/, val/, and test/ subdirectories under the training dataset ID.
+However, existing TorchSig datasets may use separate directories for each split:
+/weka/datasets/2.2.0/ ├── narrowband_impaired_train_all/ ├── narrowband_impaired_val_all/ └── narrowband_impaired_test_all/
+This mismatch causes the training pipeline to attempt dataset creation in an incorrect location, potentially resulting in a PermissionError.
+Proposed changes
+
+
+        
+      Support existing TorchSig split directories identified by their dataset IDs.
+
+        
+      Preserve compatibility with the current nested train/val/test layout.
+
+        
+      Resolve dataset paths using the appropriate train, validation, and test configurations.
+
+        
+      Load existing datasets directly using StaticTorchSigDataset.
+
+        
+      Avoid calling DatasetCreator.create() when reusing a valid existing dataset.
+
+Acceptance criteria
+
+
+        
+      Existing TorchSig datasets can be loaded without modification.
+
+        
+      Both directory layouts are supported.
+
+        
+      Existing read-only datasets can be used for training.
+
+        
+      Missing or invalid datasets produce descriptive errors.
+
+        
+      Existing dataset contents are not modified when overwrite=False.
