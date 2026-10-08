@@ -638,6 +638,72 @@ def test_prepare_torchsig_datasets_uses_storage_from_config(
     )
 
 
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_existing_storage_backend_override_selects_homogeneous_reader(
+    static_dataset_cls,
+    dataloader_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    cfg.dataset_length = 2
+    cfg.file_writer_name = "legacy"
+    for split in ("train", "val", "test"):
+        (tmp_path / cfg.dataset_id / split).mkdir(parents=True)
+    static_dataset_cls.side_effect = [TensorDataset(torch.arange(5)) for _ in range(3)]
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+
+    prepare_torchsig_datasets(
+        cfg,
+        cfg,
+        cfg,
+        dataset_root=tmp_path,
+        dataset_mode="existing",
+        storage_backend="homogeneous",
+    )
+
+    assert all(
+        call.kwargs["file_handler_class"] is HomogeneousHDF5Reader
+        for call in static_dataset_cls.call_args_list
+    )
+
+
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_existing_dataset_length_is_deterministic_and_capped(
+    static_dataset_cls,
+    tmp_path,
+):
+    configs = [DummyConfig(), DummyConfig(), DummyConfig()]
+    lengths = (4, 20, 0)
+    seeds = (11, 12, 13)
+    for cfg, split, length, seed in zip(
+        configs, ("train", "val", "test"), lengths, seeds, strict=True
+    ):
+        cfg.dataset_length = length
+        cfg.seed = seed
+        (tmp_path / cfg.dataset_id / split).mkdir(parents=True)
+
+    def load_once():
+        static_dataset_cls.side_effect = [
+            TensorDataset(torch.arange(10)) for _ in range(3)
+        ]
+        return prepare_torchsig_datasets(
+            *configs,
+            dataset_root=tmp_path,
+            dataset_mode="existing",
+            batch_size=2,
+        )[:3]
+
+    loaders_a = load_once()
+    loaders_b = load_once()
+
+    assert [len(loader.dataset) for loader in loaders_a] == [4, 10, 0]
+    assert [loader.dataset.indices for loader in loaders_a] == [
+        loader.dataset.indices for loader in loaders_b
+    ]
+    assert loaders_a[0].dataset.indices != list(range(4))
+
+
 def test_create_static_dataset_round_trips_homogeneous_hdf5(tmp_path):
     cfg = DummyConfig()
     cfg.dataset_length = 3

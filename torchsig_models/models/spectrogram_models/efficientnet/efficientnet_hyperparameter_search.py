@@ -90,7 +90,19 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("runs/optimization"),
     )
-    parser.add_argument("--dataset-length", type=int)
+    parser.add_argument(
+        "--dataset-length",
+        type=int,
+        help=(
+            "Override generated dataset length or deterministically limit "
+            "each existing split to this many samples."
+        ),
+    )
+    parser.add_argument(
+        "--storage-backend",
+        choices=["legacy", "packed", "homogeneous"],
+        help="Override the dataset storage backend configured in YAML.",
+    )
     parser.add_argument("--dataset-id")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
@@ -339,6 +351,7 @@ def main() -> None:
         dataset_mode=(
             "existing" if getattr(args, "existing_datasets", False) else "auto"
         ),
+        storage_backend=getattr(args, "storage_backend", None),
     )
 
     def train_fn(
@@ -391,6 +404,7 @@ def main() -> None:
             model_name=model_name,
             signal_generators=args.signal_generators,
             dataset_mode="existing",
+            storage_backend=getattr(args, "storage_backend", None),
             logger=training_logger,
         )
 
