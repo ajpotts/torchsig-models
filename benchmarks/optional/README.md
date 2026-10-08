@@ -55,3 +55,44 @@ The synthetic delay makes worker parallelism visible and reproducible; it is
 not a prediction of the exact speedup for every storage device. After finding a
 promising worker count, confirm it with full EfficientNet-1D epoch timings on
 the target dataset and hardware.
+
+# Optional mixed-precision benchmark
+
+`benchmark_mixed_precision.py` trains the real EfficientNet-1D model through
+the shared Lightning training utility on a deterministic synthetic IQ dataset.
+It compares `32-true`, `16-mixed`, and `bf16-mixed` in one invocation and
+reports median fit throughput, peak allocated CUDA memory, final validation
+accuracy, and relative results against `32-true`.
+
+Run it on the target deployment GPU:
+
+```bash
+python benchmarks/optional/benchmark_mixed_precision.py \
+  --model efficientnet_b0 \
+  --json-output /tmp/mixed-precision-results.json
+```
+
+The default run includes one discarded warm-up training run and three measured
+runs per supported precision. `bf16-mixed` is recorded as skipped on GPUs that
+do not support bf16. The benchmark intentionally requires CUDA because
+`16-mixed` GPU behavior is one of the configurations under comparison.
+
+Useful tuning options:
+
+```text
+--precisions       Precision modes to compare (default: all three)
+--model            efficientnet_b0, efficientnet_b2, or efficientnet_b4
+--train-samples    Synthetic training samples per epoch (default: 2048)
+--val-samples      Synthetic validation samples per epoch (default: 512)
+--sample-length    Float IQ sample length (default: 4096)
+--batch-size       Training and validation batch size (default: 64)
+--epochs           Epochs per training trial (default: 3)
+--warmup-runs      Discarded trials per precision (default: 1)
+--runs             Measured trials per precision (default: 3)
+--num-workers      Data-loader workers (default: 4)
+```
+
+Synthetic validation accuracy is useful for detecting precision-related
+divergence, but it is not a substitute for task accuracy. Before changing
+production defaults, repeat the comparison with the representative TorchSig
+dataset and training duration used for deployment.

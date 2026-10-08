@@ -38,18 +38,19 @@ Testing
 - Verify parameter-file precision is used when no API override is supplied.
 - Verify the CLI accepts each documented precision mode.
 
-Performance validation recommendation
-=====================================
+Performance benchmark
+=====================
 
-Create and retain a representative GPU benchmark before merging this change.
-Run the same EfficientNet-1D model, dataset split, seed, batch size, and epoch
-count with 32-true, 16-mixed, and bf16-mixed on the target deployment GPU. For
-each mode, record steady-state samples per second, peak allocated GPU memory,
-and final validation accuracy (or F1), including the GPU model and software
-versions. Use a warm-up period and multiple runs so initialization and dataset
-I/O do not dominate the comparison.
+An optional benchmark is provided at
+benchmarks/optional/benchmark_mixed_precision.py. It runs the same
+EfficientNet-1D model, synthetic dataset, seed, batch size, and epoch count with
+32-true, 16-mixed, and bf16-mixed. It reports median fit throughput, peak
+allocated GPU memory, final validation accuracy, hardware and software
+versions, and relative results against 32-true. It uses discarded warm-up runs
+and multiple measured trials so initialization does not dominate the result.
 
 No suitable GPU was available in the development environment, so benchmark
-numbers are intentionally not included here. The benchmark is recommended
-because mixed-precision speedups and bf16 support are hardware-dependent, and
-the accuracy comparison is needed to detect numerical regressions.
+numbers are intentionally not included here. Running the benchmark is
+recommended because mixed-precision speedups and bf16 support are
+hardware-dependent, and the accuracy comparison is needed to detect numerical
+regressions.
