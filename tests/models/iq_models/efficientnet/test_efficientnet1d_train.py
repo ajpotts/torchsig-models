@@ -114,6 +114,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         file_handler=None,
         file_reader=None,
         file_handler_options=None,
+        dataset_mode="auto",
     )
     model_factory.assert_called_once_with(
         num_classes=3,

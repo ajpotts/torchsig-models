@@ -17,8 +17,8 @@ import torchsig_models.models.spectrogram_models.efficientnet.efficientnet_hyper
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_hyperparameter_search import (
     _apply_dataset_overrides,
     _final_metrics,
-    _write_best_trial_summary,
     _load_split_configs,
+    _write_best_trial_summary,
     main,
     parse_args,
 )
@@ -60,9 +60,11 @@ class FakeCSVLogger:
 
 
 @pytest.fixture(autouse=True)
-def clear_fake_loggers() -> None:
-    """Clear recorded fake logger instances between tests."""
+def isolate_dataset_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid generating TorchSig datasets in CLI unit tests."""
     FakeCSVLogger.instances.clear()
+    monkeypatch.setattr(search_module, "prepare_torchsig_datasets", Mock())
+    monkeypatch.setattr(search_module, "_spectrogram_transforms", Mock(return_value=[]))
 
 
 def test_parse_args_accepts_shared_dataset_config(
@@ -631,8 +633,14 @@ def test_main_configures_and_runs_optimization(
     assert training_call["dataset_root"] == dataset_root
     assert training_call["overwrite"] is True
     assert training_call["model_name"] == "efficientnet_b0"
+    assert training_call["dataset_mode"] == "existing"
 
     assert training_call["signal_generators"] == "all"
+
+    search_module.prepare_torchsig_datasets.assert_called_once()
+    preparation_call = search_module.prepare_torchsig_datasets.call_args
+    assert preparation_call.kwargs["overwrite"] is True
+    assert preparation_call.kwargs["dataset_mode"] == "auto"
 
     trial_dir = output_dir / "overridden-dataset" / "efficientnet_b0" / "trial_0000"
 

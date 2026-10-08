@@ -15,7 +15,6 @@ from typing import Any, Literal
 import torch
 import yaml
 from pytorch_lightning.loggers import Logger
-
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.transforms.transforms import Spectrogram
 from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
@@ -26,7 +25,10 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
     efficientnet_b2,
     efficientnet_b4,
 )
-from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.datasets import (
+    DatasetMode,
+    prepare_torchsig_datasets,
+)
 from torchsig_models.utils.normalization import (
     compute_dataset_channel_stats,
     resolve_normalization_mode,
@@ -39,8 +41,8 @@ from torchsig_models.utils.training import (
 )
 
 __all__ = [
-    "EfficientNet2DModelName",
     "MODEL_FACTORY",
+    "EfficientNet2DModelName",
     "load_training_params",
     "train_efficientnet_2d",
 ]
@@ -174,6 +176,7 @@ def train_efficientnet_2d(
     file_handler: type[FileWriter] | None = None,
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
+    dataset_mode: DatasetMode = "auto",
     logger: Logger | bool | None = True,
     accelerator: str = "auto",
     devices: int | str | list[int] = "auto",
@@ -199,6 +202,8 @@ def train_efficientnet_2d(
         file_reader: Optional reader override paired with ``file_handler``.
         file_handler_options: Optional writer options overriding those in the
             dataset configuration.
+        dataset_mode: Dataset handling policy passed to dataset preparation.
+            Use ``"existing"`` to guarantee that generation is never invoked.
         logger: Lightning logger configuration passed to the shared training
             utility.
         accelerator: Lightning accelerator used for training.
@@ -223,7 +228,6 @@ def train_efficientnet_2d(
     )
 
     transforms = _spectrogram_transforms(train_cfg)
-
     train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
         train_cfg,
         val_cfg,
@@ -236,6 +240,7 @@ def train_efficientnet_2d(
         file_handler=file_handler,
         file_reader=file_reader,
         file_handler_options=file_handler_options,
+        dataset_mode=dataset_mode,
     )
 
     class_list = data_info["class_names"]
