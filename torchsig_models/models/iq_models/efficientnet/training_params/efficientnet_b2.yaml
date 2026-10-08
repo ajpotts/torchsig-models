@@ -5,6 +5,7 @@ normalization_eps: 1.0e-6
 
 batch_size: 32
 max_epochs: 30
+precision: bf16-mixed
 learning_rate: 3.78e-4
 patience: 5
 weight_decay: 7.3e-6

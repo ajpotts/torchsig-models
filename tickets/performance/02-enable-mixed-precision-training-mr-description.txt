@@ -1,0 +1,55 @@
+Summary
+=======
+
+- Enable mixed-precision selection for EfficientNet-1D training.
+- Default the packaged EfficientNet-1D configurations to bf16 mixed precision.
+- Preserve 32-bit precision for callers using older parameter dictionaries.
+- Expose explicit 32-true, 16-mixed, and bf16-mixed CLI overrides.
+
+Motivation
+==========
+
+The shared Lightning training utility already accepts a precision mode, but the
+EfficientNet-1D entry point did not forward one. Training therefore always used
+32-bit precision, even on GPUs that can improve throughput and reduce memory
+usage with bf16 or fp16 mixed precision.
+
+Implementation
+==============
+
+train_efficientnet_iq now accepts an optional precision override. When no
+override is supplied, it reads precision from the training parameter mapping;
+older mappings without the setting retain the previous 32-true behavior.
+
+The packaged EfficientNet B0, B2, and B4 parameter files select bf16-mixed.
+This is the preferred mode on supported GPUs because it has a wider exponent
+range than fp16. Users of other CUDA GPUs can select 16-mixed, while CPU runs
+and numerical debugging can continue to use 32-true.
+
+The command-line interface exposes the same three modes through --precision,
+with a command-line value taking precedence over the parameter YAML.
+
+Testing
+=======
+
+- Verify older parameter mappings still forward 32-true.
+- Verify 32-true, 16-mixed, and bf16-mixed API overrides reach the shared
+  training utility.
+- Verify parameter-file precision is used when no API override is supplied.
+- Verify the CLI accepts each documented precision mode.
+
+Performance validation recommendation
+=====================================
+
+Create and retain a representative GPU benchmark before merging this change.
+Run the same EfficientNet-1D model, dataset split, seed, batch size, and epoch
+count with 32-true, 16-mixed, and bf16-mixed on the target deployment GPU. For
+each mode, record steady-state samples per second, peak allocated GPU memory,
+and final validation accuracy (or F1), including the GPU model and software
+versions. Use a warm-up period and multiple runs so initialization and dataset
+I/O do not dominate the comparison.
+
+No suitable GPU was available in the development environment, so benchmark
+numbers are intentionally not included here. The benchmark is recommended
+because mixed-precision speedups and bf16 support are hardware-dependent, and
+the accuracy comparison is needed to detect numerical regressions.
