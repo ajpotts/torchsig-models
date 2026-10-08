@@ -413,7 +413,8 @@ def parse_args() -> argparse.Namespace:
         "--precision",
         choices=["32-true", "16-mixed", "bf16-mixed"],
         help=(
-            "Lightning training precision. Overrides the parameter YAML; use "
+            "Lightning training precision. Overrides the parameter YAML and "
+            "defaults to 32-true when neither specifies a value. Use "
             "bf16-mixed on supported hardware, 16-mixed on other CUDA GPUs, "
             "or 32-true for CPU training and numerical debugging."
         ),
