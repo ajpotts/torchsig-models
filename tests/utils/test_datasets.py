@@ -367,6 +367,108 @@ def test_prepare_torchsig_datasets_creates_root(tmp_path):
     assert (root / cfg.dataset_id).exists()
 
 
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_datasets_loads_separate_dataset_id_directories(
+    static_dataset_cls,
+    dataset_creator_cls,
+    dataloader_cls,
+    tmp_path,
+):
+    configs = [DummyConfig(), DummyConfig(), DummyConfig()]
+    dataset_ids = ("narrowband_train", "narrowband_val", "narrowband_test")
+    for cfg, dataset_id in zip(configs, dataset_ids, strict=True):
+        cfg.dataset_id = dataset_id
+        cfg.dataset_metadata = {"class_names": ["bpsk", "qpsk"]}
+        (tmp_path / dataset_id).mkdir()
+
+    static_datasets = [MagicMock(), MagicMock(), MagicMock()]
+    static_dataset_cls.side_effect = static_datasets
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+
+    _, _, _, info = prepare_torchsig_datasets(
+        *configs,
+        dataset_root=tmp_path,
+        overwrite=False,
+    )
+
+    dataset_creator_cls.assert_not_called()
+    assert [call.kwargs["root"] for call in static_dataset_cls.call_args_list] == [
+        str(tmp_path / dataset_id) for dataset_id in dataset_ids
+    ]
+    assert info == {
+        "root": str(tmp_path / dataset_ids[0]),
+        "class_names": ["bpsk", "qpsk"],
+    }
+
+
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_datasets_loads_existing_nested_directories(
+    static_dataset_cls,
+    dataset_creator_cls,
+    dataloader_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    cfg.dataset_metadata = {"class_names": ["tone"]}
+    split_root = tmp_path / cfg.dataset_id
+    for split in ("train", "val", "test"):
+        (split_root / split).mkdir(parents=True)
+
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+
+    prepare_torchsig_datasets(cfg, cfg, cfg, dataset_root=tmp_path)
+
+    dataset_creator_cls.assert_not_called()
+    assert [call.kwargs["root"] for call in static_dataset_cls.call_args_list] == [
+        str(split_root / split) for split in ("train", "val", "test")
+    ]
+
+
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_datasets_reports_missing_existing_split(
+    static_dataset_cls,
+    dataset_creator_cls,
+    tmp_path,
+):
+    configs = [DummyConfig(), DummyConfig(), DummyConfig()]
+    for cfg, dataset_id in zip(
+        configs,
+        ("narrowband_train", "narrowband_val", "narrowband_test"),
+        strict=True,
+    ):
+        cfg.dataset_id = dataset_id
+    (tmp_path / configs[0].dataset_id).mkdir()
+
+    with pytest.raises(FileNotFoundError, match="validation dataset directory"):
+        prepare_torchsig_datasets(*configs, dataset_root=tmp_path)
+
+    dataset_creator_cls.assert_not_called()
+    static_dataset_cls.assert_called_once()
+
+
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_datasets_reports_invalid_existing_split(
+    static_dataset_cls,
+    dataset_creator_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    for split in ("train", "val", "test"):
+        (tmp_path / cfg.dataset_id / split).mkdir(parents=True)
+    static_dataset_cls.side_effect = OSError("data.h5 is unreadable")
+
+    with pytest.raises(ValueError, match="Invalid TorchSig train dataset"):
+        prepare_torchsig_datasets(cfg, cfg, cfg, dataset_root=tmp_path)
+
+    dataset_creator_cls.assert_not_called()
+
+
 @patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
 @patch("torchsig_models.utils.datasets.DatasetCreator")
 @patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")

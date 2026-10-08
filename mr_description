@@ -1,0 +1,44 @@
+Summary
+=======
+
+- Load existing TorchSig train, validation, and test datasets from their
+  configured dataset-ID directories.
+- Preserve support for the nested `<train dataset ID>/train`, `val`, and
+  `test` layout used when generating datasets.
+- Validate existing splits and report which path is missing or invalid.
+- Avoid dataset generation and filesystem writes when reusing datasets with
+  `overwrite=False`.
+
+Motivation
+==========
+
+`prepare_torchsig_datasets()` previously assumed every split lived below the
+training dataset ID. Published TorchSig datasets can instead give each split
+its own dataset ID, such as `narrowband_impaired_train_all`,
+`narrowband_impaired_val_all`, and `narrowband_impaired_test_all`. The old path
+resolution attempted to create nested directories under the training dataset,
+which failed for read-only dataset mounts.
+
+Implementation
+==============
+
+The dataset preparation helper now detects an existing nested layout or an
+existing dataset-ID-based layout before creating directories. Existing splits
+are opened directly with `StaticTorchSigDataset` and the reader selected by
+each split's configuration. Class names are recovered from `dataset_info.yaml`
+when available, with the configuration metadata as a fallback.
+
+If an existing layout is only partially present, or a split cannot be read,
+the helper raises a descriptive split-specific exception. When no existing
+layout is found, dataset creation continues to use the original nested layout.
+Setting `overwrite=True` also retains the existing regeneration behavior.
+
+Testing
+=======
+
+- Verify separate train, validation, and test dataset-ID directories are
+  loaded without calling `DatasetCreator`.
+- Verify existing nested split directories are still loaded directly.
+- Verify partial existing layouts identify the missing split.
+- Verify unreadable datasets produce descriptive errors.
+- Run the complete dataset utility test module and formatting/lint checks.

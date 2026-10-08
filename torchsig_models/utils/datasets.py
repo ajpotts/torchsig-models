@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import yaml
 
 from torchsig.datasets.datasets import (
     StaticTorchSigDataset,
@@ -81,17 +82,9 @@ def _create_static_dataset(
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
-    configured_backend = getattr(cfg, "file_writer_name", "legacy")
-    backend_pairs = {
-        "legacy": (HDF5Writer, HDF5Reader),
-        "packed": (PackedHDF5Writer, PackedHDF5Reader),
-        "homogeneous": (HomogeneousHDF5Writer, HomogeneousHDF5Reader),
-    }
-    if configured_backend not in backend_pairs:
-        raise ValueError(f"Unsupported dataset storage backend: {configured_backend!r}")
-    configured_writer, configured_reader = backend_pairs[configured_backend]
-    file_handler = configured_writer if file_handler is None else file_handler
-    file_reader = configured_reader if file_reader is None else file_reader
+    file_handler, file_reader = _configured_file_handlers(
+        cfg, file_handler, file_reader
+    )
     if file_handler_options is None:
         file_handler_options = dict(getattr(cfg, "file_writer_kwargs", {}))
 
@@ -135,6 +128,91 @@ def _create_static_dataset(
     return static_dataset, list(iterable_dataset.class_names)
 
 
+def _configured_file_handlers(
+    cfg: TorchSigDatasetConfig,
+    file_handler: type[FileWriter] | None,
+    file_reader: type[FileReader] | None,
+) -> tuple[type[FileWriter], type[FileReader]]:
+    """Resolve the configured storage writer and reader classes."""
+    backend_pairs = {
+        "legacy": (HDF5Writer, HDF5Reader),
+        "packed": (PackedHDF5Writer, PackedHDF5Reader),
+        "homogeneous": (HomogeneousHDF5Writer, HomogeneousHDF5Reader),
+    }
+    configured_backend = getattr(cfg, "file_writer_name", "legacy")
+    if configured_backend not in backend_pairs:
+        raise ValueError(f"Unsupported dataset storage backend: {configured_backend!r}")
+    configured_writer, configured_reader = backend_pairs[configured_backend]
+    return (
+        configured_writer if file_handler is None else file_handler,
+        configured_reader if file_reader is None else file_reader,
+    )
+
+
+def _load_existing_dataset(
+    cfg: TorchSigDatasetConfig,
+    split: str,
+    root: Path,
+    file_reader: type[FileReader] | None,
+) -> tuple[StaticTorchSigDataset, list[str]]:
+    """Load and validate an existing static dataset without modifying it."""
+    split_description = "validation" if split == "val" else split
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"Existing TorchSig {split_description} dataset directory not found: {root}"
+        )
+
+    _, configured_reader = _configured_file_handlers(cfg, None, file_reader)
+    try:
+        dataset = StaticTorchSigDataset(
+            root=str(root),
+            file_handler_class=configured_reader,
+            target_labels=getattr(cfg, "target_labels", ["class_index"]),
+        )
+    except (OSError, ValueError, KeyError) as error:
+        raise ValueError(
+            f"Invalid TorchSig {split_description} dataset at {root}: {error}"
+        ) from error
+
+    class_names = list(cfg.dataset_metadata.get("class_names", []))
+    dataset_info = root / "dataset_info.yaml"
+    if dataset_info.is_file():
+        try:
+            with dataset_info.open(encoding="utf-8") as file:
+                metadata = (yaml.safe_load(file) or {}).get("dataset_metadata", {})
+            class_names = list(metadata.get("class_names", class_names))
+        except (OSError, TypeError, yaml.YAMLError) as error:
+            raise ValueError(
+                f"Invalid TorchSig {split_description} dataset metadata at "
+                f"{dataset_info}: {error}"
+            ) from error
+
+    return dataset, class_names
+
+
+def _existing_split_roots(
+    dataset_root: Path,
+    configs: tuple[
+        TorchSigDatasetConfig,
+        TorchSigDatasetConfig,
+        TorchSigDatasetConfig,
+    ],
+) -> tuple[Path, Path, Path] | None:
+    """Find an existing nested or dataset-ID-based split layout."""
+    split_names = ("train", "val", "test")
+    nested_root = dataset_root / configs[0].dataset_id
+    nested_roots = tuple(nested_root / split for split in split_names)
+    if any(path.exists() for path in nested_roots):
+        return nested_roots
+
+    dataset_ids = tuple(cfg.dataset_id for cfg in configs)
+    separate_roots = tuple(dataset_root / dataset_id for dataset_id in dataset_ids)
+    if len(set(dataset_ids)) > 1 and any(path.exists() for path in separate_roots):
+        return separate_roots
+
+    return None
+
+
 def _loader_generator(seed: int) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
@@ -161,14 +239,18 @@ def prepare_torchsig_datasets(
     torch.utils.data.DataLoader,
     dict[str, Any],
 ]:
-    """Generate static TorchSig datasets and return split dataloaders.
+    """Load or generate static TorchSig datasets and return split dataloaders.
+
+    Existing datasets may either use ``<dataset_id>/<split>`` directories or
+    one directory per split configuration's dataset ID. When ``overwrite`` is
+    false, an existing layout is loaded without invoking dataset creation.
 
     Args:
         train_cfg: Configuration for the training split.
         val_cfg: Configuration for the validation split.
         test_cfg: Configuration for the test split.
         signal_generators: Signal generators used for dataset creation.
-        dataset_root: Parent directory for the generated dataset.
+        dataset_root: Parent directory for existing or generated datasets.
         batch_size: Batch size used for creation and returned loaders.
         overwrite: Whether existing static datasets may be overwritten.
         transforms: Optional transforms applied while generating every split.
@@ -192,9 +274,14 @@ def prepare_torchsig_datasets(
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
+
+    Raises:
+        FileNotFoundError: If an existing split layout is incomplete.
+        ValueError: If an existing split cannot be loaded by its configured
+            storage reader.
     """
-    root = Path(dataset_root) / train_cfg.dataset_id
-    root.mkdir(parents=True, exist_ok=True)
+    dataset_root = Path(dataset_root)
+    root = dataset_root / train_cfg.dataset_id
 
     if num_workers < 0:
         raise ValueError("num_workers must be greater than or equal to zero.")
@@ -210,44 +297,39 @@ def prepare_torchsig_datasets(
     if transforms is None:
         transforms = _transforms(train_cfg)
 
-    train_dataset, class_names = _create_static_dataset(
-        train_cfg,
-        "train",
-        root,
-        transforms,
-        batch_size,
-        overwrite,
-        signal_generators=signal_generators,
-        file_handler=file_handler,
-        file_reader=file_reader,
-        file_handler_options=file_handler_options,
-    )
-
-    val_dataset, _ = _create_static_dataset(
-        val_cfg,
-        "val",
-        root,
-        transforms,
-        batch_size,
-        overwrite,
-        signal_generators=signal_generators,
-        file_handler=file_handler,
-        file_reader=file_reader,
-        file_handler_options=file_handler_options,
-    )
-
-    test_dataset, _ = _create_static_dataset(
-        test_cfg,
-        "test",
-        root,
-        transforms,
-        batch_size,
-        overwrite,
-        signal_generators=signal_generators,
-        file_handler=file_handler,
-        file_reader=file_reader,
-        file_handler_options=file_handler_options,
-    )
+    configs = (train_cfg, val_cfg, test_cfg)
+    split_names = ("train", "val", "test")
+    existing_roots = None if overwrite else _existing_split_roots(dataset_root, configs)
+    if existing_roots is not None:
+        loaded = tuple(
+            _load_existing_dataset(cfg, split, split_root, file_reader)
+            for cfg, split, split_root in zip(
+                configs, split_names, existing_roots, strict=True
+            )
+        )
+        train_dataset, class_names = loaded[0]
+        val_dataset = loaded[1][0]
+        test_dataset = loaded[2][0]
+    else:
+        root.mkdir(parents=True, exist_ok=True)
+        created = tuple(
+            _create_static_dataset(
+                cfg,
+                split,
+                root,
+                transforms,
+                batch_size,
+                overwrite,
+                signal_generators=signal_generators,
+                file_handler=file_handler,
+                file_reader=file_reader,
+                file_handler_options=file_handler_options,
+            )
+            for cfg, split in zip(configs, split_names, strict=True)
+        )
+        train_dataset, class_names = created[0]
+        val_dataset = created[1][0]
+        test_dataset = created[2][0]
 
     return (
         WorkerSeedingDataLoader(
