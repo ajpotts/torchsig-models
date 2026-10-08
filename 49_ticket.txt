@@ -1,0 +1,102 @@
+The TorchSig model training and hyperparameter optimization utilities need better support for pre-generated datasets.
+Currently, two limitations prevent efficient use of existing datasets:
+
+
+        
+      Storage backend selection: The dataset reader is selected from the YAML configuration. Existing datasets may use a different backend, requiring users to modify the YAML even when they only want to load existing data.
+
+        
+      Dataset length: The --dataset-length argument controls dataset generation but does not limit the number of samples loaded from an existing dataset. This makes it difficult to run small, reproducible hyperparameter searches against large datasets.
+
+Proposed changes
+1. Add a --storage-backend argument
+
+
+        
+      Support legacy, packed, and homogeneous.
+
+        
+      Default to None, preserving the YAML configuration.
+
+        
+      Allow the CLI argument to override the configured storage backend.
+
+        
+      Propagate the override through train_efficientnet_iq() and prepare_torchsig_datasets().
+
+        
+      Apply the override consistently during initial dataset preparation and subsequent Optuna trials.
+
+        
+      Keep backend selection logic centralized in the dataset utilities.
+
+Example:
+--existing-datasets --storage-backend homogeneous
+2. Support deterministic subsampling of existing datasets
+
+
+        
+      Apply --dataset-length when loading existing static datasets.
+
+        
+      Select a reproducible subset using the configured random seed.
+
+        
+      Use torch.utils.data.Subset or equivalent without modifying the underlying dataset.
+
+        
+      Reuse the same subset across all Optuna trials.
+
+        
+      Handle requested lengths exceeding the available dataset size.
+
+        
+      Preserve existing dataset-generation behavior.
+
+        
+      Document how the length override applies to training, validation, and test splits.
+
+Acceptance criteria
+
+
+        
+      Existing homogeneous HDF5 datasets can be loaded with --storage-backend homogeneous without modifying YAML files.
+
+        
+      Omitting --storage-backend preserves current behavior.
+
+        
+      Backend overrides work during both initial preparation and individual Optuna trials.
+
+        
+      --dataset-length 10000 limits each existing dataset split to 10,000 samples when sufficient samples are available.
+
+        
+      Subset selection is deterministic for a given seed.
+
+        
+      All Optuna trials use identical subsets.
+
+        
+      Existing datasets remain unchanged.
+
+        
+      Unit tests cover backend overrides, dataset length limits, reproducibility, and backward compatibility.
+
+Example usage
+python3 torchsig_models/models/iq_models/efficientnet/efficientnet1d_hyperparameter_search.py \ --train-config ../torchsig-github/torchsig/datasets/default_configs/narrowband_impaired_train_all.yaml \ --val-config ../torchsig-github/torchsig/datasets/default_configs/narrowband_impaired_val_all.yaml \ --test-config ../torchsig-github/torchsig/datasets/default_configs/narrowband_impaired_val_all.yaml \ --model efficientnet_b0 \ --dataset-root /weka/datasets/2.2.0 \ --dataset-length 10000 \ --existing-datasets \ --storage-backend homogeneous \ --n-trials 20 \ --enable-mlflow
+Relevant files
+
+
+        
+      torchsig_models/utils/datasets.py
+
+        
+      torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py
+
+        
+      torchsig_models/models/iq_models/efficientnet/efficientnet1d_hyperparameter_search.py
+
+Motivation
+The existing dataset at /weka/datasets/2.2.0/narrowband_impaired_train_all/ contains 5.7 million samples stored in homogeneous HDF5 format. The dataset loads successfully using HomogeneousHDF5Reader, but the default legacy reader fails because the HDF5 file does not contain an index dataset.
+These changes will allow smaller, reproducible Optuna experiments against existing large datasets without requiring dataset regeneration or YAML modifications.
