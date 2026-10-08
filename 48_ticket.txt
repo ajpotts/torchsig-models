@@ -1,0 +1,43 @@
+Description
+Add automated tests covering dataset directory layouts, reuse behavior, and overwrite handling in torchsig_models/utils/datasets.py.
+Proposed tests
+
+
+        
+      Load datasets using separate *_train_*, *_val_*, and *_test_* directories.
+
+        
+      Load datasets using nested train/val/test directories.
+
+        
+      Verify existing datasets can be loaded from read-only locations.
+
+        
+      Verify DatasetCreator.create() is not called when loading existing datasets.
+
+        
+      Verify overwrite=False does not modify existing dataset contents.
+
+        
+      Verify explicit overwrite behavior when generation is requested.
+
+        
+      Verify missing or incomplete datasets produce descriptive errors.
+
+        
+      Verify repeated hyperparameter optimization trials reuse the same dataset.
+
+Acceptance criteria
+
+
+        
+      All new tests pass.
+
+        
+      Existing dataset utility tests continue passing.
+
+        
+      Tests use temporary directories and do not require access to shared Weka storage.
+
+        
+      No actual model training is required for the dataset utility tests.
