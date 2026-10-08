@@ -1,0 +1,60 @@
+Title: Extend mixed-precision training to all model families
+
+Criticality: High
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+The configurable Lightning precision support proposed for EfficientNet-1D
+should be applied consistently to every model training path. EfficientNet-2D
+uses the shared train_validate helper but does not expose or forward its
+precision option. IQ XCiT constructs a Lightning Trainer directly without a
+precision setting. These paths therefore default to full precision even on
+hardware where bf16-mixed or 16-mixed training may improve throughput and
+reduce activation memory.
+
+YOLO and Anomalib manage precision through their own training frameworks. Their
+automatic-mixed-precision behavior and override mechanisms should be exposed
+and recorded rather than assumed. Spectrogram XCiT and DETR should include the
+same explicit precision policy when supported training entry points are added.
+
+Evidence:
+- tickets/performance/02-enable-mixed-precision-training.txt defines the
+  EfficientNet-1D precision requirements
+- torchsig_models/utils/training.py accepts a Lightning precision value and
+  forwards it to pytorch_lightning.Trainer
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+  calls train_validate without forwarding precision
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py constructs
+  pytorch_lightning.Trainer without specifying precision
+- YOLO and Anomalib training are framework-managed and require separate
+  validation of their AMP configuration and checkpoint behavior
+
+Proposed resolution:
+Expose precision through every native model training API, CLI, and applicable
+configuration file. Forward the setting to Lightning or the corresponding
+framework-native AMP control and record the effective precision in run and
+checkpoint metadata. Document bf16-mixed as preferred on supported hardware,
+16-mixed as a tested fallback, and 32-true for CPU execution, compatibility,
+and numerical debugging.
+
+Validate numerically sensitive model-specific operations under reduced
+precision rather than assuming that one setting is safe for all architectures.
+Add an explicit precision option as part of future spectrogram XCiT and DETR
+training entry points.
+
+Acceptance criteria:
+- EfficientNet-2D and IQ XCiT forward the requested precision to Lightning.
+- YOLO and Anomalib expose their supported AMP or precision controls and record
+  the effective mode in run metadata.
+- Spectrogram XCiT and DETR training adopt the common precision policy when
+  their training entry points are implemented.
+- Existing callers that omit precision retain a documented compatible default.
+- CPU-only execution remains supported with an appropriate full-precision
+  setting and a clear error for unsupported mixed-precision requests.
+- Tests verify forwarding of 32-true, 16-mixed, and bf16-mixed where supported,
+  plus framework-equivalent settings for adapter-based models.
+- Checkpoint save/load and inference remain compatible with models trained in
+  every supported precision mode.
+- Representative GPU benchmarks compare throughput, peak memory, convergence,
+  and final validation metrics against 32-true for each model family.

@@ -1,0 +1,80 @@
+Title: Include normalization mode in hyperparameter searches for all models
+
+Criticality: Medium
+Estimated effort: Low
+Type: Model-selection improvement
+
+Description:
+Hyperparameter searches should evaluate the input-normalization strategy for
+every supported model family rather than fixing it before optimization.
+Normalization changes the information presented to a model and can interact
+with its architecture, learning rate, and regularization. A normalization mode
+selected for one architecture or input representation therefore should not be
+assumed to be optimal for the others.
+
+EfficientNet-1D and EfficientNet-2D already accept normalization values of
+"dataset", "sample", and "none", and the shared search utility supports
+categorical parameters. Other model families, including IQ and spectrogram
+XCiT and spectrogram DETR, do not currently expose the same shared input-
+normalization interface or packaged hyperparameter-search path. They should be
+brought under the same explicit normalization policy before normalization is
+added to their searches. Model-specific internal layers such as LayerNorm or
+BatchNorm are not substitutes for defining how model inputs are normalized.
+
+Evidence:
+- The repository contains EfficientNet-1D, EfficientNet-2D, IQ XCiT,
+  spectrogram XCiT, and spectrogram DETR model families
+- Only EfficientNet-1D and EfficientNet-2D currently provide packaged
+  hyperparameter-search entry points and normalization modes of dataset,
+  sample, and none
+- torchsig_models/models/iq_models/efficientnet/search_configs/*.yaml and
+  torchsig_models/models/spectrogram_models/efficientnet/search_configs/*.yaml
+  do not include normalization in their existing search spaces
+- torchsig_models/utils/hyperparameter_search.py supports categorical search
+  parameters through Optuna suggest_categorical
+- runs/normalization_comparison/comparison.csv reports validation macro-F1 of
+  0.247 for sample normalization, 0.232 for dataset normalization, and 0.228
+  with no normalization in a controlled EfficientNet-2D experiment
+- The same experiment reports shifted-test macro-F1 of 0.238 for sample
+  normalization, compared with 0.155 for dataset normalization and 0.151 with
+  no normalization, showing that the choice can materially affect robustness
+
+Proposed resolution:
+Define a consistent input-normalization interface for every trainable model
+family, covering EfficientNet-1D, EfficientNet-2D, IQ XCiT, spectrogram XCiT,
+and spectrogram DETR. Unless a representation requires a documented exception,
+support categorical choices [dataset, sample, none]. Add normalization to every
+packaged hyperparameter-search configuration and ensure new search paths expose
+it when they are introduced.
+
+Keep each model's existing validation objective by default, but document that
+it selects normalization for in-distribution validation performance rather
+than shifted-test robustness. Review the trial budget for each search so the
+additional categorical dimension does not leave it under-sampled. Evaluate and
+document the appropriate per-sample axes and dataset channel statistics for IQ
+and spectrogram inputs rather than silently applying image conventions.
+
+Dataset normalization can require an additional pass over the training loader
+in every applicable trial. This ticket does not need to solve that performance
+issue; tickets/performance/07-cache-normalization-statistics.txt tracks caching
+the computed statistics and may need to be generalized beyond EfficientNet-1D.
+
+Acceptance criteria:
+- Every supported trainable model family has an explicit, documented input-
+  normalization policy; any model-specific exception is justified and tested.
+- EfficientNet-1D, EfficientNet-2D, IQ XCiT, spectrogram XCiT, and spectrogram
+  DETR support the applicable dataset, sample, and none normalization modes.
+- Every packaged hyperparameter-search configuration exposes normalization as a
+  categorical parameter, and newly added search paths do the same.
+- Suggested normalization values are forwarded unchanged to the corresponding
+  training function and recorded in trial hyperparameters.
+- The best-trial training-parameter output preserves the selected normalization
+  mode so the result can be reproduced.
+- Tests cover the normalization behavior and categorical search parameter for
+  every model family and input representation.
+- Dataset statistics are computed from the training split only and are reused
+  unchanged for validation, testing, checkpoint loading, and inference.
+- Checkpoints record enough normalization metadata to reproduce preprocessing
+  without recomputing or guessing the selected mode and statistics.
+- Search documentation distinguishes validation-objective selection from
+  evaluation on shifted or out-of-distribution data.

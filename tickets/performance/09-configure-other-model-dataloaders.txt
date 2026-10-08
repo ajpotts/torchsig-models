@@ -1,0 +1,61 @@
+Title: Extend configurable training data loaders to all model families
+
+Criticality: High
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+The data-loader controls introduced for EfficientNet-1D should be available
+consistently across every training path. EfficientNet-2D currently calls the
+shared prepare_torchsig_datasets helper without forwarding num_workers,
+pin_memory, or persistent_workers. IQ XCiT hard-codes num_workers=32 in its
+TorchSigDataModule and does not expose pinned-memory or worker-persistence
+settings. Fixed values can either starve a GPU or oversubscribe constrained
+systems, and they prevent comparable throughput tuning across models.
+
+YOLO and Anomalib paths already expose worker counts through their underlying
+frameworks, but their defaults and available loader controls should be audited
+and documented alongside the native TorchSig model paths. Spectrogram XCiT and
+DETR should receive the same controls when supported training entry points are
+added.
+
+Evidence:
+- tickets/performance/01-configure-training-dataloader-workers.txt defines the
+  EfficientNet-1D loader-control requirements
+- torchsig_models/models/spectrogram_models/efficientnet/efficientnet_train.py
+  calls prepare_torchsig_datasets without loader-performance arguments
+- torchsig_models/models/iq_models/xcit/xcit1d_train.py hard-codes
+  TorchSigDataModule num_workers=32
+- torchsig_models/adapters/yolo_train_detector.py and
+  torchsig_models/adapters/anomalib_utils.py expose num_workers but do not
+  provide the same explicit pin-memory and persistent-worker interface
+
+Proposed resolution:
+Expose num_workers, pin_memory, and persistent_workers through every native
+model training API, CLI, and applicable configuration file, then forward them
+to the data module or loader factory. Use shared validation and defaults where
+possible: pin memory when training on CUDA, enable persistent workers only for
+positive worker counts, and preserve deterministic worker seeding.
+
+For framework-managed YOLO and Anomalib loaders, document which controls are
+supported and forward equivalent options where their public APIs permit it.
+Record the effective settings in run metadata. Add the same interface as part
+of future spectrogram XCiT and DETR training entry points rather than leaving
+model-specific constants.
+
+Acceptance criteria:
+- EfficientNet-2D and IQ XCiT training expose configurable worker count,
+  pinned memory, and persistent workers through supported entry points.
+- YOLO and Anomalib training document and record the effective data-loader
+  settings, with all framework-supported controls exposed to callers.
+- Spectrogram XCiT and DETR training adopt the common controls when their
+  training entry points are implemented.
+- persistent_workers cannot be enabled when num_workers is zero.
+- CPU-only runs can disable pinned memory, and CUDA runs can select it without
+  model-specific code changes.
+- Deterministic worker seeding is preserved wherever the loader supports it.
+- Tests cover zero-worker and multi-worker configurations for each native
+  training path and verify forwarding for framework-managed adapters.
+- Representative benchmarks report examples per second and GPU utilization
+  for each model family before and after loader tuning.
+
