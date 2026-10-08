@@ -144,6 +144,7 @@ def train_efficientnet_iq(
     num_workers: int = 0,
     pin_memory: bool | None = None,
     persistent_workers: bool | None = None,
+    precision: str | None = None,
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-1D IQ classifier.
 
@@ -170,6 +171,12 @@ def train_efficientnet_iq(
             is enabled when CUDA is available.
         persistent_workers: Whether data-loader workers remain alive between
             epochs. If omitted, enabled whenever ``num_workers`` is positive.
+        precision: Optional Lightning numerical precision override. If omitted,
+            the value in ``params`` is used, falling back to ``"32-true"`` for
+            compatibility with parameter dictionaries that predate mixed
+            precision support. ``"bf16-mixed"`` is preferred on supported
+            hardware, with ``"16-mixed"`` as the fallback for other CUDA GPUs.
+            Use ``"32-true"`` for CPU training or numerical debugging.
 
 
     Returns:
@@ -257,8 +264,14 @@ def train_efficientnet_iq(
     module_logger.info(f"Test batches: {len(test_loader)}")
     module_logger.info(f"Batch size: {params['batch_size']}")
     module_logger.info(f"CUDA available: {torch.cuda.is_available()}")
+    training_precision = (
+        precision if precision is not None else params.get("precision", "32-true")
+    )
     module_logger.info(
-        f"Training device request: accelerator={accelerator}, devices={devices}"
+        "Training device request: accelerator=%s, devices=%s, precision=%s",
+        accelerator,
+        devices,
+        training_precision,
     )
 
     module_logger.info("Starting training...")
@@ -277,6 +290,7 @@ def train_efficientnet_iq(
         logger=logger,
         accelerator=accelerator,
         devices=devices,
+        precision=training_precision,
     )
     module_logger.info("Training finished.")
 
@@ -396,6 +410,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--precision",
+        choices=["32-true", "16-mixed", "bf16-mixed"],
+        help=(
+            "Lightning training precision. Overrides the parameter YAML; use "
+            "bf16-mixed on supported hardware, 16-mixed on other CUDA GPUs, "
+            "or 32-true for CPU training and numerical debugging."
+        ),
+    )
+
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Regenerate datasets.",
@@ -485,6 +509,7 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         pin_memory=args.pin_memory,
         persistent_workers=args.persistent_workers,
+        precision=args.precision,
     )
 
     module_logger.info(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")
