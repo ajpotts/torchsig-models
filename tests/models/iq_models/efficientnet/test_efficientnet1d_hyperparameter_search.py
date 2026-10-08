@@ -364,17 +364,26 @@ def test_best_trial_summary_uses_best_not_last_trial(tmp_path: Path) -> None:
     """Report parameters from the best trial when the last trial is worse."""
     study = optuna.create_study(direction="maximize")
     distribution = optuna.distributions.FloatDistribution(1e-5, 1e-2)
+    normalization_distribution = optuna.distributions.CategoricalDistribution(
+        ["dataset", "sample", "none"]
+    )
     study.add_trial(
         optuna.trial.create_trial(
-            params={"learning_rate": 0.001},
-            distributions={"learning_rate": distribution},
+            params={"learning_rate": 0.001, "normalization": "sample"},
+            distributions={
+                "learning_rate": distribution,
+                "normalization": normalization_distribution,
+            },
             value=0.9,
         )
     )
     study.add_trial(
         optuna.trial.create_trial(
-            params={"learning_rate": 0.009},
-            distributions={"learning_rate": distribution},
+            params={"learning_rate": 0.009, "normalization": "none"},
+            distributions={
+                "learning_rate": distribution,
+                "normalization": normalization_distribution,
+            },
             value=0.2,
         )
     )
@@ -398,13 +407,17 @@ def test_best_trial_summary_uses_best_not_last_trial(tmp_path: Path) -> None:
         "trial_number": 0,
         "metric_name": "val_f1",
         "metric_value": pytest.approx(0.9),
-        "parameters": {"learning_rate": pytest.approx(0.001)},
+        "parameters": {
+            "learning_rate": pytest.approx(0.001),
+            "normalization": "sample",
+        },
     }
     assert training_params_path == tmp_path / "best_training_params.yaml"
     assert training_params == {
         "model_name": "efficientnet_b0",
         "max_epochs": 30,
         "learning_rate": pytest.approx(0.001),
+        "normalization": "sample",
         "pretrained": True,
     }
 
@@ -529,6 +542,7 @@ def test_main_configures_and_runs_optimization(
             {
                 **kwargs["base_params"],
                 "learning_rate": 0.001,
+                "normalization": "sample",
             },
             trial_dir,
             SimpleNamespace(number=0),
@@ -541,11 +555,11 @@ def test_main_configures_and_runs_optimization(
 
         return SimpleNamespace(
             best_value=0.80,
-            best_params={"learning_rate": 0.001},
+            best_params={"learning_rate": 0.001, "normalization": "sample"},
             best_trial=SimpleNamespace(
                 number=0,
                 value=0.80,
-                params={"learning_rate": 0.001},
+                params={"learning_rate": 0.001, "normalization": "sample"},
             ),
         )
 
@@ -607,6 +621,7 @@ def test_main_configures_and_runs_optimization(
         "max_epochs": 1,
         "batch_size": 32,
         "learning_rate": 0.001,
+        "normalization": "sample",
     }
     assert "model_name" not in training_call["params"]
 
@@ -632,6 +647,7 @@ def test_main_configures_and_runs_optimization(
     assert csv_logger.hyperparameters["model_name"] == "efficientnet_b0"
     assert csv_logger.hyperparameters["train_dataset_length"] == 100
     assert csv_logger.hyperparameters["train_seed"] == 10
+    assert csv_logger.hyperparameters["normalization"] == "sample"
     assert csv_logger.hyperparameters["val_seed"] == 11
     assert csv_logger.hyperparameters["test_seed"] == 12
 

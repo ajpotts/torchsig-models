@@ -130,6 +130,18 @@ dataset = TorchSigAnomalibDataset(
 )
 ```
 
+### EfficientNet Hyperparameter Searches
+
+The packaged EfficientNet-1D and EfficientNet-2D B0, B2, and B4 search
+configurations tune input normalization as a categorical choice among
+`dataset`, `sample`, and `none`. The default search budget is 30 trials to
+account for this additional dimension.
+
+Searches optimize in-distribution validation F1. The selected normalization is
+saved in `best_training_params.yaml`, but it should also be evaluated on any
+shifted or out-of-distribution test sets relevant to deployment. Validation F1
+alone does not select explicitly for robustness to power or channel shifts.
+
 ## Package Structure
 
 ```
@@ -196,4 +208,3 @@ If you use TorchSig Models in your research, please cite:
 ## Support
 
 For questions, issues, or feature requests, please open an issue on our [GitHub repository](https://github.com/TorchDSP/torchsig-models/issues).
-

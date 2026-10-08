@@ -22,6 +22,21 @@ from torchsig_models.utils.hyperparameter_search import (
 )
 
 
+PACKAGED_SEARCH_CONFIGS = [
+    Path("torchsig_models/models")
+    / representation
+    / "efficientnet"
+    / "search_configs"
+    / filename
+    for representation in ("iq_models", "spectrogram_models")
+    for filename in (
+        "efficientnet_b0_search_config.yaml",
+        "efficientnet_b2_search_config.yaml",
+        "efficientnet_b4_search_config.yaml",
+    )
+]
+
+
 class RecordingTrial:
     """Minimal Optuna trial replacement that records suggestion calls."""
 
@@ -82,6 +97,18 @@ class RecordingTrial:
             )
         )
         return choices[0]
+
+
+@pytest.mark.parametrize("config_path", PACKAGED_SEARCH_CONFIGS)
+def test_packaged_search_configs_include_normalization(config_path: Path) -> None:
+    """Search every packaged model over all supported normalization modes."""
+    config = load_search_config(config_path)
+
+    assert config["n_trials"] == 30
+    assert config["search_space"]["normalization"] == {
+        "type": "categorical",
+        "choices": ["dataset", "sample", "none"],
+    }
 
 
 def test_load_search_config(tmp_path: Path) -> None:

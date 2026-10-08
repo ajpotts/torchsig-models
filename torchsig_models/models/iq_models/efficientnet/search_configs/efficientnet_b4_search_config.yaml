@@ -1,9 +1,13 @@
 experiment_name: efficientnet1d_b4_optimization
 direction: maximize
 metric_name: val_f1
-n_trials: 20
+n_trials: 30
 
 search_space:
+  normalization:
+    type: categorical
+    choices: [dataset, sample, none]
+
   learning_rate:
     type: float
     low: 1.0e-5

@@ -1,0 +1,110 @@
+Summary
+=======
+
+- Add full and lightweight classifier metric profiles.
+- Let callers select phase metrics, confusion-matrix computation, CSV cadence,
+  and Lightning validation frequency independently.
+- Use the lightweight profile by default for EfficientNet-1D hyperparameter
+  search trials while preserving the full profile for normal training.
+- Add a reproducible short-trial benchmark for comparing profile overhead.
+
+Motivation
+==========
+
+The shared classifier callback previously computed accuracy, F1, precision,
+recall, and a confusion matrix for both training and validation every epoch.
+When a metrics directory was configured, both epoch-end hooks rewrote the CSV
+history and confusion-matrix files. This reporting is useful for final model
+training, but it adds avoidable computation, synchronization, and file I/O to
+short exploratory and Optuna trials.
+
+Implementation
+==============
+
+`ClassifierMetricsTracker` now accepts a selected set of classification
+metrics and an independent confusion-matrix switch. Its default remains the
+existing full metric set, and full-profile CSV columns and output paths remain
+unchanged. Reduced profiles write only their selected scalar columns and omit
+the confusion-matrix directory when matrix computation is disabled.
+
+`ClassifierMetricsTrackerCallback` now supports:
+
+- `metric_profile="full"`, retaining all existing metrics, confusion matrices,
+  and per-epoch CSV writes;
+- `metric_profile="lightweight"`, retaining loss, accuracy, and F1 while
+  disabling confusion matrices and automatic CSV writes;
+- explicit training and validation metric overrides;
+- an independent confusion-matrix override; and
+- configurable automatic CSV intervals, including zero to disable writes.
+
+`train_validate` forwards these controls and `check_val_every_n_epoch` to the
+callback and Lightning Trainer. It rejects configurations that enable
+checkpointing without validation F1, ensuring the existing `val_f1` checkpoint
+monitor cannot silently disappear. It also rejects a checkpointing cadence that
+would skip validation for the entire training run.
+
+EfficientNet-1D training reads the controls from its parameter dictionary.
+Hyperparameter-search trials default to the lightweight profile, while an
+explicit profile in the training parameters still takes precedence. Accuracy
+and F1 remain available to the existing trial-summary logic.
+
+Compatibility
+=============
+
+The public defaults remain the full profile, validation every epoch, all
+classification metrics, confusion matrices, and per-epoch CSV output. Existing
+callers and final-training output formats therefore retain their prior
+behavior. The new controls are opt-in except for the EfficientNet-1D search
+entry point, which selects the lightweight profile when none is configured.
+
+Validation
+==========
+
+Added tests cover:
+
+- lightweight metric selection and disabled automatic output;
+- independent metric, confusion-matrix, and CSV-frequency overrides;
+- validation-frequency forwarding;
+- preservation of validation F1 for checkpoint monitoring;
+- rejection of a checkpoint configuration without validation F1;
+- rejection of a checkpoint configuration with no scheduled validation run;
+- full-profile defaults in EfficientNet-1D training; and
+- lightweight defaults in EfficientNet-1D hyperparameter search.
+
+Commands run:
+
+```text
+pytest -q tests/utils/test_classifier_metrics_tracker.py tests/utils/test_training.py tests/models/iq_models/efficientnet/test_efficientnet1d_train.py tests/models/iq_models/efficientnet/test_efficientnet1d_hyperparameter_search.py
+```
+
+Pytest was blocked during `tests/conftest.py` import by pre-existing unresolved
+merge markers in the adjacent TorchSig checkout at
+`/home/amandapotts/git/torchsig/torchsig/__init__.py`.
+
+```text
+python -m compileall -q benchmarks/optional/benchmark_metric_profiles.py torchsig_models tests
+ruff check <changed Python files>
+ruff format --check <changed Python files>
+```
+
+These static checks passed after formatting.
+
+Benchmark
+=========
+
+`benchmarks/optional/benchmark_metric_profiles.py` compares repeated full and
+lightweight short trials using a deterministic synthetic classification task.
+It reports median elapsed time, training samples per second, and the
+lightweight speedup ratio as console JSON or an optional JSON file.
+
+Run on the target GPU with:
+
+```text
+python benchmarks/optional/benchmark_metric_profiles.py --device cuda \
+  --json-output /tmp/metric-profile-results.json
+```
+
+The benchmark was not executed in this workspace because the same external
+TorchSig import failure prevents the training package from loading. Results
+should be captured on the target training hardware before merging or changing
+additional defaults.

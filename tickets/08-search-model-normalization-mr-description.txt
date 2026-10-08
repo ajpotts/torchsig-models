@@ -1,0 +1,96 @@
+Summary
+=======
+
+- Search input normalization for every packaged EfficientNet model.
+- Cover `dataset`, `sample`, and `none` normalization for both IQ and
+  spectrogram B0, B2, and B4 configurations.
+- Increase the default search budget from 20 to 30 trials.
+- Verify normalization forwarding, trial logging, and best-parameter output.
+
+Motivation
+==========
+
+Normalization changes both optimization behavior and the information retained
+in IQ and spectrogram inputs. The packaged searches previously fixed the mode
+from the base training parameters, even though the training paths already
+support three normalization strategies and the shared Optuna utility supports
+categorical parameters.
+
+A controlled EfficientNet-2D experiment in
+`runs/normalization_comparison/comparison.csv` also shows that normalization can
+materially change validation and shifted-test F1. Treating the mode as a search
+parameter avoids assuming that one preprocessing strategy is best for every
+architecture and representation.
+
+Implementation
+==============
+
+The B0, B2, and B4 search configurations for EfficientNet-1D and
+EfficientNet-2D now include:
+
+```yaml
+normalization:
+  type: categorical
+  choices: [dataset, sample, none]
+```
+
+The shared search machinery already forwards suggested parameters into each
+trial's training dictionary. Both training paths already resolve these values,
+compute dataset statistics from the training loader when required, preserve
+normalization metadata in checkpoints, and use the saved state at inference.
+No public training API change was necessary.
+
+The default trial count is increased from 20 to 30 in all six configurations
+to reduce under-sampling after adding the categorical dimension.
+
+Scope
+=====
+
+This change covers every model with a source-backed, packaged hyperparameter
+search in the repository: EfficientNet-1D and EfficientNet-2D B0, B2, and B4.
+IQ XCiT has no packaged search path. Spectrogram XCiT and DETR are represented
+only by stale compiled cache artifacts in this checkout, not maintainable
+source. Future search paths should expose normalization when their models
+support multiple modes, but this change does not invent new training or search
+stacks.
+
+Documentation
+=============
+
+The main README documents the three searched modes, the 30-trial default, and
+the distinction between optimizing in-distribution validation F1 and measuring
+robustness on shifted or out-of-distribution data.
+
+Validation
+==========
+
+Tests now verify:
+
+- all six packaged configurations contain the exact normalization choices and
+  updated trial count;
+- IQ and spectrogram search orchestration forwards the selected mode unchanged;
+- trial loggers record the selected normalization; and
+- `best_training_params.yaml` preserves the winning normalization mode.
+
+Commands run:
+
+```text
+pytest -q tests/utils/test_hyperperameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_hyperparameter_search.py tests/models/spectrogram_models/efficientnet/test_efficientnet_hyperparameter_search.py
+```
+
+The first invocation was blocked during TorchSig import because Numba could
+not create a cache locator in the adjacent dependency checkout. Re-running the
+same suite with JIT disabled succeeded:
+
+```text
+NUMBA_DISABLE_JIT=1 pytest -q tests/utils/test_hyperperameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_hyperparameter_search.py tests/models/spectrogram_models/efficientnet/test_efficientnet_hyperparameter_search.py
+69 passed, 44 warnings in 6.26s
+```
+
+Static validation also passed:
+
+```text
+ruff check <changed Python tests>
+python -m compileall -q <changed Python tests>
+git diff --check
+```
