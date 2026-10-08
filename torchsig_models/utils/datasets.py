@@ -122,6 +122,9 @@ def prepare_torchsig_datasets(
     batch_size: int = 64,
     overwrite: bool = False,
     transforms: list[Transform] | None = None,
+    num_workers: int = 0,
+    pin_memory: bool | None = None,
+    persistent_workers: bool | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -140,12 +143,30 @@ def prepare_torchsig_datasets(
         overwrite: Whether existing static datasets may be overwritten.
         transforms: Optional transforms applied while generating every split.
             When omitted, transforms are inferred from ``train_cfg``.
+        num_workers: Number of worker processes used by the returned loaders.
+        pin_memory: Whether the returned loaders pin host memory. If omitted,
+            pinning is enabled when CUDA is available.
+        persistent_workers: Whether worker processes remain alive between
+            epochs. If omitted, persistence is enabled when ``num_workers`` is
+            greater than zero. It is always disabled when ``num_workers`` is
+            zero.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
     """
     root = Path(dataset_root) / train_cfg.dataset_id
     root.mkdir(parents=True, exist_ok=True)
+
+    if num_workers < 0:
+        raise ValueError("num_workers must be greater than or equal to zero.")
+
+    if pin_memory is None:
+        pin_memory = torch.cuda.is_available()
+
+    if persistent_workers is None:
+        persistent_workers = num_workers > 0
+    elif persistent_workers and num_workers == 0:
+        persistent_workers = False
 
     if transforms is None:
         transforms = _transforms(train_cfg)
@@ -184,23 +205,32 @@ def prepare_torchsig_datasets(
         WorkerSeedingDataLoader(
             train_dataset,
             batch_size=batch_size,
+            num_workers=num_workers,
             shuffle=True,
             seed=train_cfg.seed,
             generator=_loader_generator(train_cfg.seed),
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
         ),
         WorkerSeedingDataLoader(
             val_dataset,
             batch_size=batch_size,
+            num_workers=num_workers,
             shuffle=False,
             seed=val_cfg.seed,
             generator=_loader_generator(val_cfg.seed),
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
         ),
         WorkerSeedingDataLoader(
             test_dataset,
             batch_size=batch_size,
+            num_workers=num_workers,
             shuffle=False,
             seed=test_cfg.seed,
             generator=_loader_generator(test_cfg.seed),
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
         ),
         {"root": str(root), "class_names": class_names},
     )

@@ -11,8 +11,30 @@ import torch
 
 import torchsig_models.models.iq_models.efficientnet.efficientnet1d_train as training_module
 from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
+    parse_args,
     train_efficientnet_iq,
 )
+
+
+def test_parse_args_accepts_loader_performance_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "efficientnet1d_train.py",
+            "--num-workers",
+            "6",
+            "--pin-memory",
+            "--no-persistent-workers",
+        ],
+    )
+
+    args = parse_args()
+
+    assert args.num_workers == 6
+    assert args.pin_memory is True
+    assert args.persistent_workers is False
 
 
 def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
@@ -71,6 +93,9 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         logger=False,
         accelerator="cpu",
         devices=1,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
     )
 
     set_deterministic.assert_called_once_with(11)
@@ -83,6 +108,9 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         batch_size=8,
         overwrite=True,
         signal_generators=["a", "b", "c"],
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
     )
     model_factory.assert_called_once_with(
         num_classes=3,

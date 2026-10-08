@@ -1,0 +1,31 @@
+Title: Establish batch-size tuning guidance for EfficientNet-1D
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance investigation
+
+Description:
+The packaged EfficientNet-1D configurations use fixed batch sizes of 32 for B0
+and B2 and 64 for B4. These values are not tied to input length, device memory,
+or precision and may underutilize the GPU or cause avoidable memory pressure on
+other hardware.
+
+Evidence:
+- torchsig_models/models/iq_models/efficientnet/training_params/*.yaml
+- IQ sequence length directly affects Conv1d activation memory
+
+Proposed resolution:
+Benchmark a range of batch sizes for each supported model, representative IQ
+lengths, and supported precision mode. Document how to select the largest
+stable batch, how learning rate should be adjusted when batch size changes,
+and when gradient accumulation is appropriate. Update defaults only when
+benchmark evidence supports the change.
+
+Acceptance criteria:
+- Benchmark results include throughput, GPU utilization, and peak allocated
+  memory for B0, B2, and B4.
+- Results state the GPU model, IQ length, software versions, and precision.
+- Training documentation provides batch-size and learning-rate scaling advice.
+- Any changed defaults complete a representative training smoke test without
+  out-of-memory errors or material accuracy regression.
+- No model-specific default is changed solely on evidence from another model.

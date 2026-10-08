@@ -1,0 +1,30 @@
+Title: Add an optional torch.compile path for EfficientNet-1D
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+EfficientNet-1D is trained in eager mode. PyTorch compilation may fuse
+operations and reduce launch overhead, but compilation has startup cost and
+its benefit for depthwise Conv1d workloads varies by PyTorch version and GPU.
+
+Evidence:
+- torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py builds
+  the model and passes it directly to train_validate
+- No EfficientNet-1D training option currently invokes torch.compile
+
+Proposed resolution:
+Add an opt-in compile setting with a configurable compile mode. Compile before
+constructing or starting the Lightning trainer, report compilation failures
+clearly, and keep eager execution as a reliable fallback. Benchmark complete
+multi-epoch runs so compilation startup time is included.
+
+Acceptance criteria:
+- Compilation can be enabled and disabled without changing model factories.
+- The compile mode is configurable and recorded in run metadata or logs.
+- Eager mode remains the default until benchmark results justify otherwise.
+- Tests verify option plumbing without requiring a costly real compilation.
+- Benchmarks report first-epoch time, steady-state epoch time, and total run
+  time for eager and compiled execution.
+- Compiled and eager outputs agree within tolerances appropriate to precision.

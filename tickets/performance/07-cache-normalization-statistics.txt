@@ -1,0 +1,34 @@
+Title: Cache EfficientNet-1D dataset normalization statistics
+
+Criticality: Medium
+Estimated effort: Medium
+Type: Performance improvement
+
+Description:
+Dataset normalization computes channel means and standard deviations by making
+an additional complete pass over the training loader before every training
+run. This adds startup time and repeated storage reads, especially during
+hyperparameter searches where all trials use the same generated dataset.
+
+Evidence:
+- torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py calls
+  compute_dataset_channel_stats for normalization="dataset"
+- torchsig_models/utils/normalization.py implements the full-loader statistics
+  pass
+
+Proposed resolution:
+Persist channel statistics alongside static-dataset metadata or in a versioned
+cache keyed by the exact training dataset and representation. Reuse valid
+statistics on later runs and recompute them when dataset identity, content,
+transforms, channel layout, or relevant normalization semantics change.
+
+Acceptance criteria:
+- A repeated run on an unchanged dataset does not scan the training samples
+  again to compute statistics.
+- Cache identity prevents statistics from being reused for a different split,
+  dataset configuration, transform pipeline, or channel layout.
+- Overwrite/regeneration invalidates or refreshes cached statistics.
+- Cached values preserve dtype and channel ordering and match fresh values
+  within documented tolerances.
+- Tests cover cache hits, cache misses, invalidation, and malformed cache data.
+- Logs state whether statistics were computed or loaded.

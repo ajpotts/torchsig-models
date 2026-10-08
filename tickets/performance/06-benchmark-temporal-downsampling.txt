@@ -1,0 +1,32 @@
+Title: Benchmark earlier temporal downsampling in EfficientNet-1D
+
+Criticality: Medium
+Estimated effort: High
+Type: Performance investigation
+
+Description:
+Conv1d compute and activation memory scale with IQ sequence length. Reducing
+the temporal dimension before or near the EfficientNet stem could substantially
+improve throughput, but aggressive downsampling may remove information needed
+to distinguish narrowband signal classes.
+
+Evidence:
+- torchsig_models/models/iq_models/efficientnet/efficientnet1d.py contains an
+  internal ds_rate conversion parameter that is not exposed by public factories
+- The public factories currently use the ds_rate=2 default
+
+Proposed resolution:
+Evaluate signal-domain resampling, a configurable stem stride, and exposing a
+well-defined architecture downsampling parameter. Compare compute, memory, and
+classification quality at multiple rates. Treat architecture changes as new
+configurations where checkpoint tensor shapes or learned behavior differ.
+
+Acceptance criteria:
+- Benchmarks compare at least the current rate and one more aggressive rate.
+- Results include throughput, peak memory, parameter count, and validation/test
+  metrics on a representative dataset.
+- The analysis documents aliasing controls used for signal-domain resampling.
+- Any public option validates its value and has forward-shape tests.
+- Checkpoint compatibility and model configuration metadata are documented.
+- No faster setting becomes the default without an explicit accuracy tradeoff
+  assessment.
