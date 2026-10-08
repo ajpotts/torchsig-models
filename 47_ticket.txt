@@ -1,0 +1,38 @@
+Hyperparameter optimization currently invokes prepare_torchsig_datasets() for every Optuna trial. This function calls _create_static_dataset() for the training, validation, and test splits, which invokes DatasetCreator.create().
+Although overwrite=False is supported, the dataset creation workflow is still entered for every trial.
+This creates unnecessary overhead and complicates the use of existing read-only datasets.
+Proposed changes
+
+
+        
+      Separate dataset creation from dataset loading.
+
+        
+      Add an explicit mechanism for using existing datasets without attempting generation.
+
+        
+      Ensure Optuna trials reuse the same static datasets.
+
+        
+      Preserve existing dataset generation functionality for normal training.
+
+        
+      Avoid unnecessary construction of iterable datasets and generation dataloaders when loading existing data.
+
+Acceptance criteria
+
+
+        
+      Hyperparameter optimization can run entirely against existing static datasets.
+
+        
+      Dataset generation is not invoked when existing datasets are selected.
+
+        
+      All trials use consistent training, validation, and test data.
+
+        
+      Dataset loading works with read-only directories.
+
+        
+      Normal training and dataset generation remain backward compatible.
