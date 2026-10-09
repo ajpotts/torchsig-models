@@ -11,7 +11,6 @@ from typing import Any
 import optuna
 import yaml
 from dotenv import load_dotenv
-from pytorch_lightning.loggers import CSVLogger, Logger, MLFlowLogger
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
@@ -21,96 +20,13 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
 )
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
 from torchsig_models.utils.hyperparameter_search import (
-    active_mlflow_run_id,
+    create_trial_loggers,
     load_search_config,
     run_hyperparameter_optimization,
+    training_run_metadata,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class _TrialMLFlowLogger(MLFlowLogger):
-    """Attach Lightning to an HPO-owned run without ending that run."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._available = True
-        self._warning_emitted = False
-        super().__init__(*args, **kwargs)
-
-    def _warn_and_disable(self, operation: str, error: Exception) -> None:
-        self._available = False
-        if not self._warning_emitted:
-            logger.warning(
-                "MLflow Lightning logging failed during %s; CSV logging will "
-                "continue: %s",
-                operation,
-                error,
-            )
-            self._warning_emitted = True
-
-    def log_hyperparams(self, params: Any) -> None:
-        """Log parameters, disabling this logger if MLflow is unavailable."""
-        if self._available:
-            try:
-                super().log_hyperparams(params)
-            except Exception as error:  # MLflow backends raise varied errors.
-                self._warn_and_disable("parameter logging", error)
-
-    def log_metrics(
-        self,
-        metrics: dict[str, float],
-        step: int | None = None,
-    ) -> None:
-        """Log metrics, disabling this logger if MLflow is unavailable."""
-        if self._available:
-            try:
-                super().log_metrics(metrics, step=step)
-            except Exception as error:  # MLflow backends raise varied errors.
-                self._warn_and_disable("metric logging", error)
-
-    def finalize(self, status: str) -> None:
-        """Leave run finalization to the shared HPO lifecycle manager."""
-        del status
-
-
-def _training_loggers(
-    *,
-    trial_dir: Path,
-    mlflow_enabled: bool,
-    experiment_name: str,
-) -> Logger | list[Logger]:
-    """Create the always-on CSV logger and optional current-run MLflow logger."""
-    csv_logger = CSVLogger(
-        save_dir=trial_dir,
-        name="lightning_logs",
-        version="",
-    )
-    if not mlflow_enabled:
-        return csv_logger
-
-    run_id = active_mlflow_run_id()
-    if run_id is None:
-        logger.warning(
-            "No active MLflow trial run was exposed; training will continue "
-            "with CSV logging only."
-        )
-        return csv_logger
-
-    try:
-        mlflow_logger = _TrialMLFlowLogger(
-            experiment_name=experiment_name,
-            run_id=run_id,
-            log_model=False,
-        )
-    except Exception as error:
-        logger.warning(
-            "MLflow Lightning logger could not be initialized; training will "
-            "continue with CSV logging only: %s",
-            error,
-        )
-        return csv_logger
-
-    return [csv_logger, mlflow_logger]
 
 
 def parse_args() -> argparse.Namespace:
@@ -444,34 +360,26 @@ def main() -> None:
         trial_params = params.copy()
         trial_params.pop("model_name", None)
 
-        training_logger = _training_loggers(
+        training_config = training_run_metadata(
+            params=trial_params,
+            trial_number=trial.number,
+            model_name=model_name,
+            train_cfg=train_cfg,
+            val_cfg=val_cfg,
+            test_cfg=test_cfg,
+            storage_backend=(
+                getattr(args, "storage_backend", None)
+                or getattr(train_cfg, "file_writer_name", "legacy")
+            ),
+            optimizer="AdamW",
+            scheduler="LinearLR+CosineAnnealingLR",
+        )
+        training_logger = create_trial_loggers(
             trial_dir=trial_dir,
             mlflow_enabled=args.enable_mlflow,
             experiment_name=experiment_name,
+            hyperparameters=training_config,
         )
-
-        training_config = {
-            **trial_params,
-            "trial_number": trial.number,
-            "model_name": model_name,
-            "train_dataset_id": train_cfg.dataset_id,
-            "val_dataset_id": val_cfg.dataset_id,
-            "test_dataset_id": test_cfg.dataset_id,
-            "train_dataset_length": train_cfg.dataset_length,
-            "val_dataset_length": val_cfg.dataset_length,
-            "test_dataset_length": test_cfg.dataset_length,
-            "train_seed": train_cfg.seed,
-            "val_seed": val_cfg.seed,
-            "test_seed": test_cfg.seed,
-            "storage_backend": getattr(train_cfg, "file_writer_name", "legacy"),
-            "optimizer": "AdamW",
-            "scheduler": "LinearLR+CosineAnnealingLR",
-        }
-        loggers = (
-            training_logger if isinstance(training_logger, list) else [training_logger]
-        )
-        for configured_logger in loggers:
-            configured_logger.log_hyperparams(training_config)
 
         result = train_efficientnet_iq(
             train_cfg=train_cfg,

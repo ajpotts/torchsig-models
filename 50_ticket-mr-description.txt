@@ -1,18 +1,19 @@
 ## Summary
 
-- keep the existing per-trial CSV logs and add Lightning MLflow logging when
-  `--enable-mlflow` is set
+- add shared HPO helpers for complete training metadata and combined CSV plus
+  Lightning MLflow logging, used by both EfficientNet-1D and EfficientNet-2D
+  searches when `--enable-mlflow` is set
 - attach Lightning to the MLflow run already created by the shared Optuna
   utility, avoiding duplicate runs and leaving run finalization with the HPO
   lifecycle manager
 - record the complete trial configuration, dataset IDs/lengths/seeds, storage
-  backend, optimizer, scheduler, epoch metrics, and final test metrics
+  backend, optimizer, scheduler, epoch metrics, and final evaluation metrics
 - fall back to CSV-only logging with a warning if MLflow initialization or
   metric/parameter logging fails
 
 ## Testing
 
-- `NUMBA_CACHE_DIR=/tmp/torchsig-numba-cache MPLCONFIGDIR=/tmp/torchsig-matplotlib python -m pytest -q tests/utils/test_hyperperameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_hyperparameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_train.py`
+- `NUMBA_CACHE_DIR=/tmp/torchsig-numba-cache MPLCONFIGDIR=/tmp/torchsig-matplotlib python -m pytest -q tests/utils/test_hyperperameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_hyperparameter_search.py tests/models/iq_models/efficientnet/test_efficientnet1d_train.py tests/models/spectrogram_models/efficientnet/test_efficientnet_hyperparameter_search.py tests/models/spectrogram_models/efficientnet/test_efficientnet_train.py`
 
 ## Notes
 

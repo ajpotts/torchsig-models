@@ -12,6 +12,7 @@ from typing import Any
 import optuna
 import yaml
 import logging
+from pytorch_lightning.loggers import CSVLogger, Logger, MLFlowLogger
 
 try:
     import mlflow
@@ -36,6 +37,132 @@ _active_mlflow_run_id: ContextVar[str | None] = ContextVar(
 def active_mlflow_run_id() -> str | None:
     """Return the MLflow run ID owned by the current optimization context."""
     return _active_mlflow_run_id.get()
+
+
+class _TrialMLFlowLogger(MLFlowLogger):
+    """Attach Lightning to an HPO-owned run without ending that run."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._available = True
+        self._warning_emitted = False
+        super().__init__(*args, **kwargs)
+
+    def _warn_and_disable(self, operation: str, error: Exception) -> None:
+        self._available = False
+        if not self._warning_emitted:
+            logger.warning(
+                "MLflow Lightning logging failed during %s; CSV logging will "
+                "continue: %s",
+                operation,
+                error,
+            )
+            self._warning_emitted = True
+
+    def log_hyperparams(self, params: Any) -> None:
+        """Log parameters, disabling this logger if MLflow is unavailable."""
+        if self._available:
+            try:
+                super().log_hyperparams(params)
+            except Exception as error:  # MLflow backends raise varied errors.
+                self._warn_and_disable("parameter logging", error)
+
+    def log_metrics(
+        self,
+        metrics: dict[str, float],
+        step: int | None = None,
+    ) -> None:
+        """Log metrics, disabling this logger if MLflow is unavailable."""
+        if self._available:
+            try:
+                super().log_metrics(metrics, step=step)
+            except Exception as error:  # MLflow backends raise varied errors.
+                self._warn_and_disable("metric logging", error)
+
+    def finalize(self, status: str) -> None:
+        """Leave run finalization to the shared HPO lifecycle manager."""
+        del status
+
+
+def create_trial_loggers(
+    *,
+    trial_dir: str | Path,
+    mlflow_enabled: bool,
+    experiment_name: str,
+    hyperparameters: Mapping[str, Any] | None = None,
+) -> Logger | list[Logger]:
+    """Create CSV and optional existing-run MLflow loggers for an HPO trial.
+
+    CSV logging is always configured. MLflow initialization and logging are
+    best-effort, and the MLflow logger reuses the run owned by
+    :func:`run_hyperparameter_optimization`.
+    """
+    csv_logger = CSVLogger(
+        save_dir=Path(trial_dir),
+        name="lightning_logs",
+        version="",
+    )
+    loggers: list[Logger] = [csv_logger]
+
+    if mlflow_enabled:
+        run_id = active_mlflow_run_id()
+        if run_id is None:
+            logger.warning(
+                "No active MLflow trial run was exposed; training will continue "
+                "with CSV logging only."
+            )
+        else:
+            try:
+                loggers.append(
+                    _TrialMLFlowLogger(
+                        experiment_name=experiment_name,
+                        run_id=run_id,
+                        log_model=False,
+                    )
+                )
+            except Exception as error:
+                logger.warning(
+                    "MLflow Lightning logger could not be initialized; training "
+                    "will continue with CSV logging only: %s",
+                    error,
+                )
+
+    if hyperparameters is not None:
+        for configured_logger in loggers:
+            configured_logger.log_hyperparams(dict(hyperparameters))
+
+    return loggers if len(loggers) > 1 else csv_logger
+
+
+def training_run_metadata(
+    *,
+    params: Mapping[str, Any],
+    trial_number: int,
+    model_name: str,
+    train_cfg: Any,
+    val_cfg: Any,
+    test_cfg: Any,
+    storage_backend: str,
+    optimizer: str,
+    scheduler: str,
+) -> dict[str, Any]:
+    """Build common training and dataset metadata for an HPO trial."""
+    return {
+        **params,
+        "trial_number": trial_number,
+        "model_name": model_name,
+        "train_dataset_id": train_cfg.dataset_id,
+        "val_dataset_id": val_cfg.dataset_id,
+        "test_dataset_id": test_cfg.dataset_id,
+        "train_dataset_length": train_cfg.dataset_length,
+        "val_dataset_length": val_cfg.dataset_length,
+        "test_dataset_length": test_cfg.dataset_length,
+        "train_seed": train_cfg.seed,
+        "val_seed": val_cfg.seed,
+        "test_seed": test_cfg.seed,
+        "storage_backend": storage_backend,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+    }
 
 
 class _MLflowLogger:
@@ -356,10 +483,13 @@ def run_hyperparameter_optimization(
                 metric_value,
             )
 
-            if "num_params" in result:
+            final_metrics = _final_result_metrics(result)
+            for name, value in final_metrics.items():
+                if name == metric_name:
+                    continue
                 tracking.log_metric(
-                    "num_params",
-                    result["num_params"],
+                    name,
+                    value,
                 )
 
         return metric_value
@@ -391,6 +521,35 @@ def run_hyperparameter_optimization(
             )
 
     return study
+
+
+def _final_result_metrics(result: Mapping[str, Any]) -> dict[str, float]:
+    """Extract scalar final metrics from a training result."""
+    metrics = {
+        name: float(value)
+        for name, value in result.items()
+        if isinstance(value, (float, int)) and not isinstance(value, bool)
+    }
+
+    test_metrics = result.get("test_metrics")
+    history = getattr(test_metrics, "history", None)
+    if isinstance(history, Mapping):
+        metric_names = {
+            "loss": "test_loss",
+            "accuracy": "test_acc",
+            "f1 score": "test_f1",
+            "precision": "test_precision",
+            "recall": "test_recall",
+        }
+        metrics.update(
+            {
+                output_name: float(history[source_name][-1])
+                for source_name, output_name in metric_names.items()
+                if history.get(source_name)
+            }
+        )
+
+    return metrics
 
 
 def _extract_metric(

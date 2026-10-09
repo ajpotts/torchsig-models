@@ -11,7 +11,6 @@ from typing import Any
 import optuna
 import yaml
 from dotenv import load_dotenv
-from pytorch_lightning.loggers import CSVLogger
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train import (
@@ -22,8 +21,10 @@ from torchsig_models.models.spectrogram_models.efficientnet.efficientnet_train i
 )
 from torchsig_models.utils.datasets import prepare_torchsig_datasets
 from torchsig_models.utils.hyperparameter_search import (
+    create_trial_loggers,
     load_search_config,
     run_hyperparameter_optimization,
+    training_run_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -369,27 +370,25 @@ def main() -> None:
         trial_params = params.copy()
         trial_params.pop("model_name", None)
 
-        training_logger = CSVLogger(
-            save_dir=trial_dir,
-            name="lightning_logs",
-            version="",
+        training_config = training_run_metadata(
+            params=trial_params,
+            trial_number=trial.number,
+            model_name=model_name,
+            train_cfg=train_cfg,
+            val_cfg=val_cfg,
+            test_cfg=test_cfg,
+            storage_backend=(
+                getattr(args, "storage_backend", None)
+                or getattr(train_cfg, "file_writer_name", "legacy")
+            ),
+            optimizer="AdamW",
+            scheduler="LinearLR+CosineAnnealingLR",
         )
-
-        training_logger.log_hyperparams(
-            {
-                **trial_params,
-                "trial_number": trial.number,
-                "model_name": model_name,
-                "train_dataset_id": train_cfg.dataset_id,
-                "val_dataset_id": val_cfg.dataset_id,
-                "test_dataset_id": test_cfg.dataset_id,
-                "train_dataset_length": train_cfg.dataset_length,
-                "val_dataset_length": val_cfg.dataset_length,
-                "test_dataset_length": test_cfg.dataset_length,
-                "train_seed": train_cfg.seed,
-                "val_seed": val_cfg.seed,
-                "test_seed": test_cfg.seed,
-            }
+        training_logger = create_trial_loggers(
+            trial_dir=trial_dir,
+            mlflow_enabled=args.enable_mlflow,
+            experiment_name=experiment_name,
+            hyperparameters=training_config,
         )
 
         result = train_efficientnet_2d(
