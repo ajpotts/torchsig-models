@@ -74,6 +74,13 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
     monkeypatch.setattr(training_module, "train_validate", train_validate)
 
     test_metrics = MagicMock()
+    test_metrics.history = {
+        "loss": [0.25],
+        "accuracy": [0.9],
+        "f1 score": [0.85],
+        "precision": [0.8],
+        "recall": [0.88],
+    }
     evaluate_classifier = MagicMock(return_value=test_metrics)
     monkeypatch.setattr(training_module, "evaluate_classifier", evaluate_classifier)
     set_deterministic = MagicMock()
@@ -82,6 +89,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
 
     checkpoint_dir = tmp_path / "checkpoints"
     metrics_dir = tmp_path / "metrics"
+    training_logger = MagicMock()
     result = train_efficientnet_iq(
         train_cfg=train_cfg,
         val_cfg=val_cfg,
@@ -93,7 +101,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         overwrite=True,
         model_name="efficientnet_b0",
         signal_generators=["a", "b", "c"],
-        logger=False,
+        logger=training_logger,
         accelerator="cpu",
         devices=1,
         num_workers=4,
@@ -150,6 +158,16 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         criterion=training_call["criterion"],
     )
     test_metrics.save_to_csv.assert_called_once_with(metrics_dir / "test")
+    training_logger.log_metrics.assert_called_once_with(
+        {
+            "test_loss": 0.25,
+            "test_acc": 0.9,
+            "test_f1": 0.85,
+            "test_precision": 0.8,
+            "test_recall": 0.88,
+        },
+        step=3,
+    )
     assert result["num_classes"] == 3
     assert result["num_params"] == 15
     assert result["metrics"] is metrics_callback

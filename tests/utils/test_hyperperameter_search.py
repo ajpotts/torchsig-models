@@ -16,6 +16,7 @@ from torchsig_models.utils.hyperparameter_search import (
     _MLflowLogger,
     _extract_metric,
     _mlflow_http_settings,
+    active_mlflow_run_id,
     load_search_config,
     run_hyperparameter_optimization,
     suggest_params,
@@ -603,3 +604,53 @@ def test_mlflow_logger_disables_after_first_failure(
     assert tracking.enabled is False
     assert calls == 1
     assert caplog.text.count("MLflow is unavailable") == 1
+
+
+def test_optimization_exposes_existing_trial_run_to_training(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Expose the one HPO-created trial run without creating a second run."""
+    run_ids = iter(["parent-run", "trial-run"])
+    started_runs: list[str] = []
+
+    def start_run(**kwargs: Any) -> SimpleNamespace:
+        del kwargs
+        run_id = next(run_ids)
+        started_runs.append(run_id)
+        return SimpleNamespace(info=SimpleNamespace(run_id=run_id))
+
+    fake_mlflow = SimpleNamespace(
+        start_run=start_run,
+        end_run=lambda: None,
+        set_experiment=lambda name: None,
+        log_params=lambda params: None,
+        log_param=lambda name, value: None,
+        log_metric=lambda name, value: None,
+    )
+    monkeypatch.setattr(hyperparameter_search, "mlflow", fake_mlflow)
+
+    observed_run_ids: list[str | None] = []
+
+    def train_fn(
+        params: dict[str, Any],
+        trial_dir: Path,
+        trial: optuna.Trial,
+    ) -> dict[str, float]:
+        del params, trial_dir, trial
+        observed_run_ids.append(active_mlflow_run_id())
+        return {"val_f1": 0.75}
+
+    run_hyperparameter_optimization(
+        base_params={},
+        search_space={},
+        train_fn=train_fn,
+        n_trials=1,
+        output_dir=tmp_path,
+        show_progress_bar=False,
+        mlflow_enabled=True,
+    )
+
+    assert started_runs == ["parent-run", "trial-run"]
+    assert observed_run_ids == ["trial-run"]
+    assert active_mlflow_run_id() is None

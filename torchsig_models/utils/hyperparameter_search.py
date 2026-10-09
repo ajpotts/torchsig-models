@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 import os
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,16 @@ ObjectiveTrainFn = Callable[
 
 
 logger = logging.getLogger(__name__)
+
+_active_mlflow_run_id: ContextVar[str | None] = ContextVar(
+    "active_mlflow_run_id",
+    default=None,
+)
+
+
+def active_mlflow_run_id() -> str | None:
+    """Return the MLflow run ID owned by the current optimization context."""
+    return _active_mlflow_run_id.get()
 
 
 class _MLflowLogger:
@@ -82,28 +93,34 @@ class _MLflowLogger:
         *,
         run_name: str,
         nested: bool = False,
-    ) -> Iterator[None]:
+    ) -> Iterator[str | None]:
         """Open an MLflow run when tracking is available."""
         if not self.enabled:
-            yield
+            yield None
             return
 
         assert mlflow is not None
 
         run_started = False
+        run_id: str | None = None
+        token = None
 
         try:
-            mlflow.start_run(
+            run = mlflow.start_run(
                 run_name=run_name,
                 nested=nested,
             )
             run_started = True
+            run_id = run.info.run_id
+            token = _active_mlflow_run_id.set(run_id)
         except Exception as error:
             self._disable("starting a run", error)
 
         try:
-            yield
+            yield run_id
         finally:
+            if token is not None:
+                _active_mlflow_run_id.reset(token)
             if run_started:
                 try:
                     mlflow.end_run()

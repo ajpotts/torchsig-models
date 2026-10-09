@@ -11,6 +11,7 @@ import argparse
 import logging
 from dataclasses import replace
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import torch
@@ -144,7 +145,7 @@ def train_efficientnet_iq(
     file_handler: type[FileWriter] | None = None,
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
-    logger: Logger | bool | None = True,
+    logger: Logger | Iterable[Logger] | bool | None = True,
     accelerator: str = "gpu",
     devices: int | str | list[int] = 1,
     num_workers: int = 0,
@@ -323,6 +324,39 @@ def train_efficientnet_iq(
         criterion=criterion,
     )
     test_metrics.save_to_csv(metrics_dir / "test")
+
+    history = getattr(test_metrics, "history", None)
+    if isinstance(history, dict):
+        metric_names = {
+            "loss": "test_loss",
+            "accuracy": "test_acc",
+            "f1 score": "test_f1",
+            "precision": "test_precision",
+            "recall": "test_recall",
+        }
+        final_test_metrics = {
+            output_name: float(history[source_name][-1])
+            for source_name, output_name in metric_names.items()
+            if history.get(source_name)
+        }
+        if final_test_metrics:
+            configured_loggers = (
+                logger if isinstance(logger, (list, tuple)) else [logger]
+            )
+            for configured_logger in configured_loggers:
+                if configured_logger in (False, None, True):
+                    continue
+                try:
+                    configured_logger.log_metrics(
+                        final_test_metrics,
+                        step=int(params["max_epochs"]),
+                    )
+                except Exception as error:
+                    module_logger.warning(
+                        "Final test metrics could not be logged by %s: %s",
+                        type(configured_logger).__name__,
+                        error,
+                    )
 
     return {
         "pl_model": pl_model,

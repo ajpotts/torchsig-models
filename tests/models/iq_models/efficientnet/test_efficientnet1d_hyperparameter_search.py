@@ -361,6 +361,88 @@ def test_final_metrics_extracts_latest_values() -> None:
     }
 
 
+def test_training_loggers_reuse_active_mlflow_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Combine CSV logging with the MLflow logger for the current trial run."""
+    created: list[dict[str, Any]] = []
+
+    class FakeMLFlowLogger:
+        def __init__(self, **kwargs: Any) -> None:
+            created.append(kwargs)
+
+    monkeypatch.setattr(search_module, "CSVLogger", FakeCSVLogger)
+    monkeypatch.setattr(search_module, "_TrialMLFlowLogger", FakeMLFlowLogger)
+    monkeypatch.setattr(search_module, "active_mlflow_run_id", lambda: "run-123")
+
+    loggers = search_module._training_loggers(
+        trial_dir=tmp_path,
+        mlflow_enabled=True,
+        experiment_name="efficientnet-search",
+    )
+
+    assert isinstance(loggers, list)
+    assert len(loggers) == 2
+    assert isinstance(loggers[0], FakeCSVLogger)
+    assert created == [
+        {
+            "experiment_name": "efficientnet-search",
+            "run_id": "run-123",
+            "log_model": False,
+        }
+    ]
+
+
+def test_training_loggers_fall_back_to_csv_on_mlflow_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Keep CSV logging when the Lightning MLflow logger cannot initialize."""
+    monkeypatch.setattr(search_module, "CSVLogger", FakeCSVLogger)
+    monkeypatch.setattr(search_module, "active_mlflow_run_id", lambda: "run-123")
+
+    def fail(**kwargs: Any) -> None:
+        del kwargs
+        raise ConnectionError("tracking server unavailable")
+
+    monkeypatch.setattr(search_module, "_TrialMLFlowLogger", fail)
+
+    with caplog.at_level("WARNING"):
+        training_logger = search_module._training_loggers(
+            trial_dir=tmp_path,
+            mlflow_enabled=True,
+            experiment_name="efficientnet-search",
+        )
+
+    assert isinstance(training_logger, FakeCSVLogger)
+    assert "CSV logging only" in caplog.text
+
+
+def test_trial_mlflow_logger_disables_after_metric_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Suppress runtime MLflow failures so Lightning training can continue."""
+    mlflow_logger = object.__new__(search_module._TrialMLFlowLogger)
+    mlflow_logger._available = True
+    mlflow_logger._warning_emitted = False
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise ConnectionError("tracking server unavailable")
+
+    monkeypatch.setattr(search_module.MLFlowLogger, "log_metrics", fail)
+
+    with caplog.at_level("WARNING"):
+        mlflow_logger.log_metrics({"val_f1": 0.75}, step=1)
+        mlflow_logger.log_metrics({"val_f1": 0.80}, step=2)
+
+    assert mlflow_logger._available is False
+    assert caplog.text.count("CSV logging will continue") == 1
+
+
 def test_best_trial_summary_uses_best_not_last_trial(tmp_path: Path) -> None:
     """Report parameters from the best trial when the last trial is worse."""
     study = optuna.create_study(direction="maximize")
