@@ -1,0 +1,144 @@
+Description
+The EfficientNet-1D hyperparameter optimization workflow currently uses separate logging mechanisms for Optuna/MLflow tracking and PyTorch Lightning training.
+When --enable-mlflow is specified, Optuna parameters and final objective metrics are tracked in MLflow, but additional training information is written only to the local CSVLogger.
+Update the logging integration so that enabling MLflow automatically records all training hyperparameters, dataset metadata, and training metrics in MLflow, while preserving existing CSV logging.
+Proposed changes
+1. Support MLflow logging alongside CSV logging
+
+
+        
+      Continue using CSVLogger for local training logs.
+
+        
+      When --enable-mlflow is specified, also configure Lightning's MLFlowLogger.
+
+        
+      Pass both loggers to the Lightning Trainer.
+
+        
+      When MLflow is disabled, retain the existing CSV-only behavior.
+
+        
+      Do not require any additional CLI flags.
+
+2. Record complete training configuration
+Log the following parameters to MLflow:
+
+
+        
+      Model name and Optuna trial number
+
+        
+      All training hyperparameters, including fixed parameters and Optuna-selected values
+
+        
+      Training, validation, and test dataset IDs
+
+        
+      Dataset lengths and random seeds
+
+        
+      Storage backend
+
+        
+      Relevant training configuration, including optimizer and scheduler settings
+
+3. Record training and evaluation metrics
+
+
+        
+      Log epoch-by-epoch training and validation metrics.
+
+        
+      Include training/validation loss, accuracy, and F1 where available.
+
+        
+      Preserve metric step/epoch information for plotting learning curves.
+
+        
+      Record final training, validation, and test metrics where available.
+
+        
+      Preserve existing Optuna objective metric logging.
+
+4. Reuse existing MLflow trial runs
+The shared hyperparameter optimization utility should remain responsible for MLflow run creation and lifecycle management.
+
+
+        
+      Attach Lightning's MLFlowLogger to the existing MLflow trial run.
+
+        
+      Avoid creating duplicate MLflow runs for the same Optuna trial.
+
+        
+      Ensure each trial's metrics and parameters are associated with the correct run.
+
+        
+      If the optimization utility does not expose an active MLflow run, pass the run ID explicitly to the training function.
+
+        
+      Avoid duplicate parameter or metric logging where possible.
+
+5. Preserve graceful failure behavior
+
+
+        
+      MLflow failures should not interrupt training when local logging remains available.
+
+        
+      Emit clear warnings when MLflow logging cannot be initialized or fails.
+
+        
+      Continue recording local CSV logs even if MLflow becomes unavailable.
+
+Acceptance criteria
+
+
+        
+      Without --enable-mlflow, training continues to use CSV logging only.
+
+        
+      With --enable-mlflow, training logs are recorded in both CSV and MLflow.
+
+        
+      All fixed and Optuna-selected hyperparameters appear in MLflow.
+
+        
+      Dataset IDs, lengths, seeds, and storage backend appear in MLflow.
+
+        
+      Epoch-by-epoch training and validation metrics appear in MLflow with appropriate steps.
+
+        
+      Final evaluation metrics are recorded where available.
+
+        
+      Each Optuna trial corresponds to one MLflow run, without duplicate runs.
+
+        
+      Existing Optuna objective tracking continues to work.
+
+        
+      MLflow failures do not prevent training or local logging.
+
+        
+      Tests cover enabled/disabled MLflow behavior, run reuse, metric logging, and failure handling.
+
+Relevant files
+
+
+        
+      torchsig_models/models/iq_models/efficientnet/efficientnet1d_hyperparameter_search.py
+
+        
+      torchsig_models/models/iq_models/efficientnet/efficientnet1d_train.py
+
+        
+      torchsig_models/utils/hyperparameter_search.py
+
+Expected behavior
+Running:
+python3 torchsig_models/models/iq_models/efficientnet/efficientnet1d_hyperparameter_search.py \ --model efficientnet_b0 \ --existing-datasets \ --storage-backend homogeneous \ --dataset-length 10000 \ --n-trials 20 \ --enable-mlflow \ ...
+should produce one MLflow run per Optuna trial, containing the complete training configuration, dataset metadata, epoch-by-epoch learning curves, and final evaluation metrics.
+The same information should remain available locally through CSV logging.
