@@ -27,6 +27,7 @@ from torchsig_models.models.iq_models.efficientnet import (
 )
 from torchsig_models.utils.datasets import (
     DatasetMode,
+    StorageBackend,
     prepare_torchsig_datasets,
 )
 from torchsig_models.utils.normalization import (
@@ -151,6 +152,7 @@ def train_efficientnet_iq(
     persistent_workers: bool | None = None,
     precision: str | None = None,
     dataset_mode: DatasetMode = "auto",
+    storage_backend: StorageBackend | None = None,
 ) -> dict[str, Any]:
     """Train and evaluate an EfficientNet-1D IQ classifier.
 
@@ -190,6 +192,7 @@ def train_efficientnet_iq(
             dataset configuration.
         dataset_mode: Dataset handling policy passed to dataset preparation.
             Use ``"existing"`` to guarantee that generation is never invoked.
+        storage_backend: Optional dataset storage backend override.
 
 
     Returns:
@@ -222,6 +225,7 @@ def train_efficientnet_iq(
         file_reader=file_reader,
         file_handler_options=file_handler_options,
         dataset_mode=dataset_mode,
+        storage_backend=storage_backend,
     )
     module_logger.info("Datasets ready.")
 
@@ -385,7 +389,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-length",
         type=int,
-        help="Override dataset length.",
+        help=(
+            "Override generated dataset length or deterministically limit "
+            "each existing split to this many samples."
+        ),
+    )
+
+    parser.add_argument(
+        "--storage-backend",
+        choices=["legacy", "packed", "homogeneous"],
+        help="Override the dataset storage backend configured in YAML.",
     )
 
     parser.add_argument(
@@ -528,6 +541,7 @@ if __name__ == "__main__":
         pin_memory=args.pin_memory,
         persistent_workers=args.persistent_workers,
         precision=args.precision,
+        storage_backend=args.storage_backend,
     )
 
     module_logger.info(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")

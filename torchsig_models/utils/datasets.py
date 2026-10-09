@@ -31,12 +31,24 @@ from torchsig.utils.writer import DatasetCreator
 
 __all__ = [
     "DatasetMode",
+    "StorageBackend",
     "prepare_torchsig_datasets",
     "prepare_torchsig_inference_dataset",
 ]
 
 
 DatasetMode = Literal["auto", "create", "existing"]
+StorageBackend = Literal["legacy", "packed", "homogeneous"]
+
+
+_STORAGE_BACKENDS: dict[
+    StorageBackend,
+    tuple[type[FileWriter], type[FileReader]],
+] = {
+    "legacy": (HDF5Writer, HDF5Reader),
+    "packed": (PackedHDF5Writer, PackedHDF5Reader),
+    "homogeneous": (HomogeneousHDF5Writer, HomogeneousHDF5Reader),
+}
 
 
 def _dataset_metadata(
@@ -81,11 +93,12 @@ def _create_static_dataset(
     file_handler: type[FileWriter] | None = None,
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
+    storage_backend: StorageBackend | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Generate and load one static TorchSig dataset split."""
     split_root = root / split
     file_handler, file_reader = _configured_file_handlers(
-        cfg, file_handler, file_reader
+        cfg, file_handler, file_reader, storage_backend
     )
     if file_handler_options is None:
         file_handler_options = dict(getattr(cfg, "file_writer_kwargs", {}))
@@ -134,17 +147,13 @@ def _configured_file_handlers(
     cfg: TorchSigDatasetConfig,
     file_handler: type[FileWriter] | None,
     file_reader: type[FileReader] | None,
+    storage_backend: StorageBackend | None = None,
 ) -> tuple[type[FileWriter], type[FileReader]]:
     """Resolve the configured storage writer and reader classes."""
-    backend_pairs = {
-        "legacy": (HDF5Writer, HDF5Reader),
-        "packed": (PackedHDF5Writer, PackedHDF5Reader),
-        "homogeneous": (HomogeneousHDF5Writer, HomogeneousHDF5Reader),
-    }
-    configured_backend = getattr(cfg, "file_writer_name", "legacy")
-    if configured_backend not in backend_pairs:
+    configured_backend = storage_backend or getattr(cfg, "file_writer_name", "legacy")
+    if configured_backend not in _STORAGE_BACKENDS:
         raise ValueError(f"Unsupported dataset storage backend: {configured_backend!r}")
-    configured_writer, configured_reader = backend_pairs[configured_backend]
+    configured_writer, configured_reader = _STORAGE_BACKENDS[configured_backend]
     return (
         configured_writer if file_handler is None else file_handler,
         configured_reader if file_reader is None else file_reader,
@@ -156,6 +165,7 @@ def _load_existing_dataset(
     split: str,
     root: Path,
     file_reader: type[FileReader] | None,
+    storage_backend: StorageBackend | None = None,
 ) -> tuple[StaticTorchSigDataset, list[str]]:
     """Load and validate an existing static dataset without modifying it."""
     split_description = "validation" if split == "val" else split
@@ -164,7 +174,9 @@ def _load_existing_dataset(
             f"Existing TorchSig {split_description} dataset directory not found: {root}"
         )
 
-    _, configured_reader = _configured_file_handlers(cfg, None, file_reader)
+    _, configured_reader = _configured_file_handlers(
+        cfg, None, file_reader, storage_backend
+    )
     try:
         dataset = StaticTorchSigDataset(
             root=str(root),
@@ -236,6 +248,31 @@ def _loader_generator(seed: int) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
 
+class _SeedableSubset(torch.utils.data.Subset):
+    """Subset compatible with TorchSig's seed-propagating data loader."""
+
+    def seed(self, seed: int) -> None:
+        """Forward a loader seed to the underlying dataset when supported."""
+        seed_dataset = getattr(self.dataset, "seed", None)
+        if seed_dataset is not None:
+            seed_dataset(seed)
+
+
+def _subsample_existing_dataset(
+    dataset: torch.utils.data.Dataset,
+    requested_length: int,
+    seed: int,
+) -> torch.utils.data.Dataset:
+    """Return a deterministic, non-mutating subset of an existing dataset."""
+    if requested_length < 0:
+        raise ValueError("dataset_length must be greater than or equal to zero.")
+    subset_length = min(requested_length, len(dataset))
+    indices = torch.randperm(len(dataset), generator=_loader_generator(seed))[
+        :subset_length
+    ].tolist()
+    return _SeedableSubset(dataset, indices)
+
+
 def prepare_torchsig_datasets(
     train_cfg: TorchSigDatasetConfig,
     val_cfg: TorchSigDatasetConfig,
@@ -253,6 +290,7 @@ def prepare_torchsig_datasets(
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
     dataset_mode: DatasetMode = "auto",
+    storage_backend: StorageBackend | None = None,
 ) -> tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -296,6 +334,12 @@ def prepare_torchsig_datasets(
             false and generating otherwise. ``"create"`` always enters the
             generation workflow. ``"existing"`` only loads configured split
             directories and never constructs generation datasets or loaders.
+        storage_backend: Optional ``"legacy"``, ``"packed"``, or
+            ``"homogeneous"`` storage override. When omitted, each dataset
+            configuration selects its backend. For existing datasets, each
+            split is deterministically limited to its configured
+            ``dataset_length`` using that split's seed; requests larger than a
+            split retain all available samples.
 
     Returns:
         Training, validation, and test loaders followed by dataset metadata.
@@ -312,6 +356,8 @@ def prepare_torchsig_datasets(
         raise ValueError("num_workers must be greater than or equal to zero.")
     if dataset_mode not in ("auto", "create", "existing"):
         raise ValueError("dataset_mode must be one of 'auto', 'create', or 'existing'.")
+    if storage_backend is not None and storage_backend not in _STORAGE_BACKENDS:
+        raise ValueError(f"Unsupported dataset storage backend: {storage_backend!r}")
 
     if pin_memory is None:
         pin_memory = torch.cuda.is_available()
@@ -334,7 +380,7 @@ def prepare_torchsig_datasets(
         existing_roots = _existing_split_roots(dataset_root, configs)
     if existing_roots is not None:
         loaded = tuple(
-            _load_existing_dataset(cfg, split, split_root, file_reader)
+            _load_existing_dataset(cfg, split, split_root, file_reader, storage_backend)
             for cfg, split, split_root in zip(
                 configs, split_names, existing_roots, strict=True
             )
@@ -342,6 +388,12 @@ def prepare_torchsig_datasets(
         train_dataset, class_names = loaded[0]
         val_dataset = loaded[1][0]
         test_dataset = loaded[2][0]
+        train_dataset, val_dataset, test_dataset = tuple(
+            _subsample_existing_dataset(dataset, int(cfg.dataset_length), int(cfg.seed))
+            for dataset, cfg in zip(
+                (train_dataset, val_dataset, test_dataset), configs, strict=True
+            )
+        )
     else:
         root.mkdir(parents=True, exist_ok=True)
         created = tuple(
@@ -356,6 +408,7 @@ def prepare_torchsig_datasets(
                 file_handler=file_handler,
                 file_reader=file_reader,
                 file_handler_options=file_handler_options,
+                storage_backend=storage_backend,
             )
             for cfg, split in zip(configs, split_names, strict=True)
         )

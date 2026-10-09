@@ -336,6 +336,8 @@ def test_parse_args_reads_overrides(
             "efficientnet_b4",
             "--dataset-length",
             "1000",
+            "--storage-backend",
+            "packed",
             "--dataset-id",
             "spectrogram_test",
             "--dataset-root",
@@ -363,6 +365,7 @@ def test_parse_args_reads_overrides(
     assert args.params == Path("params.yaml")
     assert args.model == "efficientnet_b4"
     assert args.dataset_length == 1000
+    assert args.storage_backend == "packed"
     assert args.dataset_id == "spectrogram_test"
     assert args.dataset_root == Path("custom-datasets")
     assert args.output_dir == Path("custom-runs")

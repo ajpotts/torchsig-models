@@ -447,6 +447,7 @@ def test_main_configures_and_runs_optimization(
         dataset_root=dataset_root,
         output_dir=output_dir,
         dataset_length=100,
+        storage_backend="homogeneous",
         dataset_id="overridden-dataset",
         overwrite=True,
         n_trials=3,
@@ -634,6 +635,7 @@ def test_main_configures_and_runs_optimization(
     assert training_call["overwrite"] is True
     assert training_call["model_name"] == "efficientnet_b0"
     assert training_call["dataset_mode"] == "existing"
+    assert training_call["storage_backend"] == "homogeneous"
 
     assert training_call["signal_generators"] == "all"
 
@@ -641,6 +643,7 @@ def test_main_configures_and_runs_optimization(
     preparation_call = search_module.prepare_torchsig_datasets.call_args
     assert preparation_call.kwargs["overwrite"] is True
     assert preparation_call.kwargs["dataset_mode"] == "auto"
+    assert preparation_call.kwargs["storage_backend"] == "homogeneous"
 
     trial_dir = output_dir / "overridden-dataset" / "efficientnet_b0" / "trial_0000"
 

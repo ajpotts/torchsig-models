@@ -27,6 +27,8 @@ def test_parse_args_accepts_loader_performance_options(
             "6",
             "--pin-memory",
             "--no-persistent-workers",
+            "--storage-backend",
+            "homogeneous",
         ],
     )
 
@@ -35,6 +37,7 @@ def test_parse_args_accepts_loader_performance_options(
     assert args.num_workers == 6
     assert args.pin_memory is True
     assert args.persistent_workers is False
+    assert args.storage_backend == "homogeneous"
 
 
 def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
@@ -115,6 +118,7 @@ def test_train_efficientnet_iq_orchestrates_training_and_evaluation(
         file_reader=None,
         file_handler_options=None,
         dataset_mode="auto",
+        storage_backend=None,
     )
     model_factory.assert_called_once_with(
         num_classes=3,

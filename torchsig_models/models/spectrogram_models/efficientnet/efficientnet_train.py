@@ -27,6 +27,7 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
 )
 from torchsig_models.utils.datasets import (
     DatasetMode,
+    StorageBackend,
     prepare_torchsig_datasets,
 )
 from torchsig_models.utils.normalization import (
@@ -177,6 +178,7 @@ def train_efficientnet_2d(
     file_reader: type[FileReader] | None = None,
     file_handler_options: dict[str, Any] | None = None,
     dataset_mode: DatasetMode = "auto",
+    storage_backend: StorageBackend | None = None,
     logger: Logger | bool | None = True,
     accelerator: str = "auto",
     devices: int | str | list[int] = "auto",
@@ -204,6 +206,7 @@ def train_efficientnet_2d(
             dataset configuration.
         dataset_mode: Dataset handling policy passed to dataset preparation.
             Use ``"existing"`` to guarantee that generation is never invoked.
+        storage_backend: Optional dataset storage backend override.
         logger: Lightning logger configuration passed to the shared training
             utility.
         accelerator: Lightning accelerator used for training.
@@ -241,6 +244,7 @@ def train_efficientnet_2d(
         file_reader=file_reader,
         file_handler_options=file_handler_options,
         dataset_mode=dataset_mode,
+        storage_backend=storage_backend,
     )
 
     class_list = data_info["class_names"]
@@ -395,7 +399,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-length",
         type=int,
-        help="Override dataset length.",
+        help=(
+            "Override generated dataset length or deterministically limit "
+            "each existing split to this many samples."
+        ),
+    )
+
+    parser.add_argument(
+        "--storage-backend",
+        choices=["legacy", "packed", "homogeneous"],
+        help="Override the dataset storage backend configured in YAML.",
     )
 
     parser.add_argument(
@@ -572,6 +585,7 @@ if __name__ == "__main__":
         overwrite=args.overwrite,
         accelerator=args.accelerator,
         devices=args.devices,
+        storage_backend=args.storage_backend,
     )
 
     print(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")
