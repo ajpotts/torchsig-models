@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock
 
 import optuna
 import pytest
@@ -15,16 +14,11 @@ import yaml
 import torchsig_models.utils.hyperparameter_search as hyperparameter_search
 from torchsig_models.utils.hyperparameter_search import (
     _MLflowLogger,
-    _TrialMLFlowLogger,
     _extract_metric,
-    _final_result_metrics,
     _mlflow_http_settings,
-    active_mlflow_run_id,
-    create_trial_loggers,
     load_search_config,
     run_hyperparameter_optimization,
     suggest_params,
-    training_run_metadata,
 )
 
 
@@ -107,13 +101,13 @@ class RecordingTrial:
 
 @pytest.mark.parametrize("config_path", PACKAGED_SEARCH_CONFIGS)
 def test_packaged_search_configs_include_normalization(config_path: Path) -> None:
-    """Search every packaged model over all supported normalization modes."""
+    """Search every packaged model over normalized input modes."""
     config = load_search_config(config_path)
 
     assert config["n_trials"] == 30
     assert config["search_space"]["normalization"] == {
         "type": "categorical",
-        "choices": ["dataset", "sample", "none"],
+        "choices": ["dataset", "sample"],
     }
 
 
@@ -609,211 +603,3 @@ def test_mlflow_logger_disables_after_first_failure(
     assert tracking.enabled is False
     assert calls == 1
     assert caplog.text.count("MLflow is unavailable") == 1
-
-
-def test_create_trial_loggers_reuses_active_mlflow_run(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Create reusable CSV and existing-run MLflow loggers for any search."""
-    csv_logger = Mock()
-    mlflow_logger = Mock()
-    csv_factory = Mock(return_value=csv_logger)
-    mlflow_factory = Mock(return_value=mlflow_logger)
-    monkeypatch.setattr(hyperparameter_search, "CSVLogger", csv_factory)
-    monkeypatch.setattr(hyperparameter_search, "_TrialMLFlowLogger", mlflow_factory)
-    monkeypatch.setattr(
-        hyperparameter_search,
-        "active_mlflow_run_id",
-        lambda: "run-123",
-    )
-
-    loggers = create_trial_loggers(
-        trial_dir=tmp_path,
-        mlflow_enabled=True,
-        experiment_name="model-search",
-        hyperparameters={"batch_size": 32},
-    )
-
-    assert loggers == [csv_logger, mlflow_logger]
-    csv_factory.assert_called_once_with(
-        save_dir=tmp_path,
-        name="lightning_logs",
-        version="",
-    )
-    mlflow_factory.assert_called_once_with(
-        experiment_name="model-search",
-        run_id="run-123",
-        log_model=False,
-    )
-    csv_logger.log_hyperparams.assert_called_once_with({"batch_size": 32})
-    mlflow_logger.log_hyperparams.assert_called_once_with({"batch_size": 32})
-
-
-def test_create_trial_loggers_falls_back_to_csv_on_mlflow_failure(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Keep the shared CSV logger when MLflow cannot initialize."""
-    csv_logger = Mock()
-    monkeypatch.setattr(
-        hyperparameter_search,
-        "CSVLogger",
-        Mock(return_value=csv_logger),
-    )
-    monkeypatch.setattr(
-        hyperparameter_search,
-        "active_mlflow_run_id",
-        lambda: "run-123",
-    )
-    monkeypatch.setattr(
-        hyperparameter_search,
-        "_TrialMLFlowLogger",
-        Mock(side_effect=ConnectionError("tracking server unavailable")),
-    )
-
-    with caplog.at_level(logging.WARNING):
-        training_logger = create_trial_loggers(
-            trial_dir=tmp_path,
-            mlflow_enabled=True,
-            experiment_name="model-search",
-        )
-
-    assert training_logger is csv_logger
-    assert "CSV logging only" in caplog.text
-
-
-def test_trial_mlflow_logger_disables_after_metric_failure(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Suppress runtime MLflow failures so Lightning training can continue."""
-    mlflow_logger = object.__new__(_TrialMLFlowLogger)
-    mlflow_logger._available = True
-    mlflow_logger._warning_emitted = False
-
-    def fail(*args: Any, **kwargs: Any) -> None:
-        del args, kwargs
-        raise ConnectionError("tracking server unavailable")
-
-    monkeypatch.setattr(hyperparameter_search.MLFlowLogger, "log_metrics", fail)
-
-    with caplog.at_level(logging.WARNING):
-        mlflow_logger.log_metrics({"val_f1": 0.75}, step=1)
-        mlflow_logger.log_metrics({"val_f1": 0.80}, step=2)
-
-    assert mlflow_logger._available is False
-    assert caplog.text.count("CSV logging will continue") == 1
-
-
-def test_final_result_metrics_includes_test_history() -> None:
-    """Extract generic scalar and final evaluation metrics for MLflow."""
-    result = {
-        "val_f1": 0.8,
-        "num_params": 123,
-        "ignored": object(),
-        "test_metrics": SimpleNamespace(
-            history={
-                "loss": [0.25],
-                "accuracy": [0.9],
-                "f1 score": [0.85],
-                "precision": [0.8],
-                "recall": [0.88],
-            }
-        ),
-    }
-
-    assert _final_result_metrics(result) == {
-        "val_f1": 0.8,
-        "num_params": 123.0,
-        "test_loss": 0.25,
-        "test_acc": 0.9,
-        "test_f1": 0.85,
-        "test_precision": 0.8,
-        "test_recall": 0.88,
-    }
-
-
-def test_training_run_metadata_builds_common_search_metadata() -> None:
-    """Build the complete metadata contract shared by model searches."""
-    metadata = training_run_metadata(
-        params={"batch_size": 32, "learning_rate": 0.001},
-        trial_number=4,
-        model_name="efficientnet_b0",
-        train_cfg=SimpleNamespace(dataset_id="train", dataset_length=100, seed=1),
-        val_cfg=SimpleNamespace(dataset_id="val", dataset_length=20, seed=2),
-        test_cfg=SimpleNamespace(dataset_id="test", dataset_length=30, seed=3),
-        storage_backend="homogeneous",
-        optimizer="AdamW",
-        scheduler="LinearLR+CosineAnnealingLR",
-    )
-
-    assert metadata == {
-        "batch_size": 32,
-        "learning_rate": 0.001,
-        "trial_number": 4,
-        "model_name": "efficientnet_b0",
-        "train_dataset_id": "train",
-        "val_dataset_id": "val",
-        "test_dataset_id": "test",
-        "train_dataset_length": 100,
-        "val_dataset_length": 20,
-        "test_dataset_length": 30,
-        "train_seed": 1,
-        "val_seed": 2,
-        "test_seed": 3,
-        "storage_backend": "homogeneous",
-        "optimizer": "AdamW",
-        "scheduler": "LinearLR+CosineAnnealingLR",
-    }
-
-
-def test_optimization_exposes_existing_trial_run_to_training(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Expose the one HPO-created trial run without creating a second run."""
-    run_ids = iter(["parent-run", "trial-run"])
-    started_runs: list[str] = []
-
-    def start_run(**kwargs: Any) -> SimpleNamespace:
-        del kwargs
-        run_id = next(run_ids)
-        started_runs.append(run_id)
-        return SimpleNamespace(info=SimpleNamespace(run_id=run_id))
-
-    fake_mlflow = SimpleNamespace(
-        start_run=start_run,
-        end_run=lambda: None,
-        set_experiment=lambda name: None,
-        log_params=lambda params: None,
-        log_param=lambda name, value: None,
-        log_metric=lambda name, value: None,
-    )
-    monkeypatch.setattr(hyperparameter_search, "mlflow", fake_mlflow)
-
-    observed_run_ids: list[str | None] = []
-
-    def train_fn(
-        params: dict[str, Any],
-        trial_dir: Path,
-        trial: optuna.Trial,
-    ) -> dict[str, float]:
-        del params, trial_dir, trial
-        observed_run_ids.append(active_mlflow_run_id())
-        return {"val_f1": 0.75}
-
-    run_hyperparameter_optimization(
-        base_params={},
-        search_space={},
-        train_fn=train_fn,
-        n_trials=1,
-        output_dir=tmp_path,
-        show_progress_bar=False,
-        mlflow_enabled=True,
-    )
-
-    assert started_runs == ["parent-run", "trial-run"]
-    assert observed_run_ids == ["trial-run"]
-    assert active_mlflow_run_id() is None

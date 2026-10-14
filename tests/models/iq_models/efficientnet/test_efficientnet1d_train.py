@@ -16,6 +16,20 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
 )
 
 
+def test_parse_args_uses_impaired_narrowband_configs_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use TorchSig's installed impaired configs when none are supplied."""
+    monkeypatch.setattr("sys.argv", ["efficientnet1d_train.py"])
+
+    args = parse_args()
+
+    assert args.config is None
+    assert args.train_config.name == "narrowband_impaired_train_all.yaml"
+    assert args.val_config.name == "narrowband_impaired_val_all.yaml"
+    assert args.test_config.name == "narrowband_impaired_val_all.yaml"
+
+
 def test_parse_args_accepts_loader_performance_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
