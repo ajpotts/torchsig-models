@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -11,6 +12,7 @@ from torchsig.utils.file_handlers.homogeneous_hdf5 import (
     HomogeneousHDF5Writer,
 )
 
+import torchsig_models.utils.datasets as datasets_module
 from torchsig_models.utils.datasets import (
     _create_static_dataset,
     _dataset_metadata,
@@ -22,12 +24,26 @@ from torchsig_models.utils.datasets import (
 
 
 @pytest.mark.parametrize("split", ["train", "val"])
-def test_default_narrowband_config_uses_installed_impaired_config(split: str) -> None:
-    """Resolve defaults from TorchSig's installed config directory."""
+def test_default_narrowband_config_uses_installed_impaired_config(
+    split: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Resolve defaults relative to the installed TorchSig package."""
+    torchsig_package = tmp_path / "torchsig"
+    config_dir = torchsig_package / "datasets" / "default_configs"
+    config_dir.mkdir(parents=True)
+    expected_path = config_dir / f"narrowband_impaired_{split}_all.yaml"
+    expected_path.touch()
+    monkeypatch.setattr(
+        datasets_module.torchsig,
+        "__file__",
+        str(torchsig_package / "__init__.py"),
+    )
+
     config_path = default_narrowband_config(split)  # type: ignore[arg-type]
 
-    assert config_path.name == f"narrowband_impaired_{split}_all.yaml"
-    assert config_path.parent.name == "default_configs"
+    assert config_path == expected_path
     assert config_path.is_file()
 
 
