@@ -505,10 +505,19 @@ def test_main_configures_and_runs_optimization(
         },
     )
 
+    def fake_create_trial_loggers(**kwargs: Any) -> FakeCSVLogger:
+        training_logger = FakeCSVLogger(
+            save_dir=kwargs["trial_dir"],
+            name="lightning_logs",
+            version="",
+        )
+        training_logger.log_hyperparams(kwargs["hyperparameters"])
+        return training_logger
+
     monkeypatch.setattr(
         search_module,
-        "CSVLogger",
-        FakeCSVLogger,
+        "create_trial_loggers",
+        fake_create_trial_loggers,
     )
 
     training_calls: list[dict[str, Any]] = []
