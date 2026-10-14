@@ -3,6 +3,7 @@
 from pathlib import Path
 import torch
 from ultralytics import YOLO
+from torchsig_models.utils.checkpoint_metadata import read_checkpoint_metadata_sidecar
 
 
 def yolo_infer(
@@ -15,6 +16,12 @@ def yolo_infer(
     split: str = "val",  # "val", "test", or "train"
 ):
     weights = output_dir / run_name / "weights" / "best.pt"  # or "last.pt"
+    metadata = read_checkpoint_metadata_sidecar(
+        weights,
+        expected_representation="spectrogram",
+    )
+    if metadata is not None and metadata["model"]["family"] != "ultralytics-yolo":
+        raise ValueError("Checkpoint metadata does not describe an Ultralytics model.")
 
     model = YOLO(weights)
 

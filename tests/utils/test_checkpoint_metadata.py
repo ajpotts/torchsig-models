@@ -6,7 +6,9 @@ from torchsig_models.utils.checkpoint_metadata import (
     CHECKPOINT_METADATA_VERSION,
     build_checkpoint_metadata,
     checkpoint_metadata,
+    read_checkpoint_metadata_sidecar,
     resolve_checkpoint_model_name,
+    write_checkpoint_metadata_sidecar,
 )
 
 
@@ -74,3 +76,16 @@ def test_resolve_checkpoint_model_name_rejects_conflicting_override() -> None:
             "efficientnet_b4",
             legacy_default="efficientnet_b4",
         )
+
+
+def test_checkpoint_metadata_sidecar_round_trip(tmp_path) -> None:
+    checkpoint_path = tmp_path / "model.pt"
+
+    sidecar_path = write_checkpoint_metadata_sidecar(checkpoint_path, _metadata())
+
+    assert sidecar_path == tmp_path / "model.pt.metadata.json"
+    assert read_checkpoint_metadata_sidecar(checkpoint_path) == _metadata()
+
+
+def test_missing_checkpoint_metadata_sidecar_is_legacy_compatible(tmp_path) -> None:
+    assert read_checkpoint_metadata_sidecar(tmp_path / "legacy.pt") is None

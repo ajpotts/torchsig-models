@@ -10,6 +10,7 @@ from .anomalib_utils import (
     AnomalyLabel,
     SpectrogramZoom,
     SpectrogramRescale,
+    write_anomalib_checkpoint_metadata,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "AnomalyLabel",
     "SpectrogramZoom",
     "SpectrogramRescale",
+    "write_anomalib_checkpoint_metadata",
 ]

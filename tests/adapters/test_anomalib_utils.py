@@ -14,7 +14,9 @@ from torchsig_models.adapters.anomalib_utils import (
     SpectrogramRescale,
     TorchSigAnomalibDataModule,
     TorchSigAnomalibDataset,
+    write_anomalib_checkpoint_metadata,
 )
+from torchsig_models.utils.checkpoint_metadata import read_checkpoint_metadata_sidecar
 
 
 class _FakeStaticDataset:
@@ -28,6 +30,23 @@ class _FakeStaticDataset:
 
     def __getitem__(self, index: int) -> object:
         return self.samples[index]
+
+
+def test_write_anomalib_checkpoint_metadata(tmp_path) -> None:
+    checkpoint_path = tmp_path / "model.ckpt"
+
+    write_anomalib_checkpoint_metadata(
+        checkpoint_path,
+        model_name="PatchCore",
+        model_parameters={"backbone": "wide_resnet50_2"},
+        preprocessing={"resize": [224, 224]},
+        postprocessing="anomalib_default",
+    )
+
+    metadata = read_checkpoint_metadata_sidecar(checkpoint_path)
+    assert metadata is not None
+    assert metadata["model"]["family"] == "anomalib"
+    assert metadata["model"]["backbone"] == "wide_resnet50_2"
 
 
 @pytest.fixture

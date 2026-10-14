@@ -121,6 +121,8 @@ def efficientnet1d_inference(
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
     metadata = checkpoint_metadata(checkpoint, expected_representation="iq")
+    if metadata is not None and metadata["model"]["family"] != "efficientnet":
+        raise ValueError("Checkpoint metadata does not describe an EfficientNet model.")
     resolved_model_name = resolve_checkpoint_model_name(
         metadata,
         model_name,

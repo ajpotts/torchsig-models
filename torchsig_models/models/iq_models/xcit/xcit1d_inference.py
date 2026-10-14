@@ -2,6 +2,7 @@
 
 from torchsig_models.models import XCiTClassifier
 from torchsig_models.utils.training import configure_determinism
+from torchsig_models.utils.checkpoint_metadata import checkpoint_metadata
 from torchsig.utils.defaults import TorchSigDefaults
 from torchsig.datasets.datamodules import TorchSigDataModule
 from torchsig.transforms.transforms import ComplexTo2D
@@ -178,6 +179,10 @@ def xcit1d_inference(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load model from Lightning checkpoint.
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    metadata = checkpoint_metadata(checkpoint, expected_representation="iq")
+    if metadata is not None and metadata["model"]["family"] != "xcit":
+        raise ValueError("Checkpoint metadata does not describe an XCiT model.")
     model = XCiTClassifier.load_from_checkpoint(
         checkpoint_path,
         map_location=device,

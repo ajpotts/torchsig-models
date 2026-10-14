@@ -130,6 +130,8 @@ def efficientnet_inference(
         checkpoint,
         expected_representation="spectrogram",
     )
+    if metadata is not None and metadata["model"]["family"] != "efficientnet":
+        raise ValueError("Checkpoint metadata does not describe an EfficientNet model.")
     resolved_model_name = resolve_checkpoint_model_name(
         metadata,
         model_name,

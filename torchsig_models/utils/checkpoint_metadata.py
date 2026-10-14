@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from importlib.metadata import PackageNotFoundError, version
+import json
+from pathlib import Path
 from typing import Any, Literal
 
 CHECKPOINT_METADATA_VERSION = 1
@@ -25,9 +27,12 @@ def build_checkpoint_metadata(
     input_channels: int,
     num_classes: int,
     class_names: list[str],
-    drop_path_rate: float,
-    drop_rate: float,
     preprocessing: dict[str, Any],
+    drop_path_rate: float | None = None,
+    drop_rate: float | None = None,
+    model_family: str = "efficientnet",
+    model_parameters: dict[str, Any] | None = None,
+    postprocessing: str = "argmax",
 ) -> dict[str, Any]:
     """Build the versioned metadata needed to reconstruct model inference.
 
@@ -44,16 +49,22 @@ def build_checkpoint_metadata(
     Returns:
         A checkpoint-safe metadata dictionary.
     """
+    model = {
+        "family": model_family,
+        "name": model_name,
+        "input_channels": input_channels,
+        "num_classes": num_classes,
+    }
+    if drop_path_rate is not None:
+        model["drop_path_rate"] = float(drop_path_rate)
+    if drop_rate is not None:
+        model["drop_rate"] = float(drop_rate)
+    if model_parameters:
+        model.update(deepcopy(model_parameters))
+
     return {
         "schema_version": CHECKPOINT_METADATA_VERSION,
-        "model": {
-            "family": "efficientnet",
-            "name": model_name,
-            "input_channels": input_channels,
-            "num_classes": num_classes,
-            "drop_path_rate": float(drop_path_rate),
-            "drop_rate": float(drop_rate),
-        },
+        "model": model,
         "input": {
             "representation": input_representation,
             "dtype": "float32",
@@ -64,7 +75,7 @@ def build_checkpoint_metadata(
         },
         "output": {
             "class_names": list(class_names),
-            "postprocessing": "argmax",
+            "postprocessing": postprocessing,
         },
         "provenance": {"torchsig_models_version": _package_version()},
     }
@@ -107,8 +118,6 @@ def checkpoint_metadata(
         "name",
         "input_channels",
         "num_classes",
-        "drop_path_rate",
-        "drop_rate",
     }
     if not required_model_fields.issubset(model):
         raise ValueError("Checkpoint model metadata is incomplete.")
@@ -145,3 +154,38 @@ def resolve_checkpoint_model_name(
             f"{stored_name!r}."
         )
     return stored_name
+
+
+def metadata_sidecar_path(checkpoint_path: str | Path) -> Path:
+    """Return the metadata sidecar path for a framework-owned checkpoint."""
+    path = Path(checkpoint_path)
+    return path.with_name(f"{path.name}.metadata.json")
+
+
+def write_checkpoint_metadata_sidecar(
+    checkpoint_path: str | Path,
+    metadata: dict[str, Any],
+) -> Path:
+    """Validate and write metadata beside a third-party checkpoint file."""
+    validated = checkpoint_metadata({"hyper_parameters": {"model_metadata": metadata}})
+    path = metadata_sidecar_path(checkpoint_path)
+    path.write_text(
+        json.dumps(validated, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return path
+
+
+def read_checkpoint_metadata_sidecar(
+    checkpoint_path: str | Path,
+    *,
+    expected_representation: InputRepresentation | None = None,
+) -> dict[str, Any] | None:
+    """Read an optional metadata sidecar for a third-party checkpoint."""
+    path = metadata_sidecar_path(checkpoint_path)
+    if not path.exists():
+        return None
+    contents = json.loads(path.read_text(encoding="utf-8"))
+    return checkpoint_metadata(
+        {"hyper_parameters": {"model_metadata": contents}},
+        expected_representation=expected_representation,
+    )
