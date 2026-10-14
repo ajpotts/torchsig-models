@@ -145,17 +145,21 @@ def test_parse_args_accepts_train_config_without_shared_config(
     assert args.train_config == train_config
 
 
-def test_parse_args_requires_dataset_or_train_config(
+def test_parse_args_uses_default_split_configs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reject calls without a shared or training dataset config."""
+    """Use installed train and validation configs when none are provided."""
     monkeypatch.setattr(
         "sys.argv",
         ["efficientnet_hyperparameter_search.py"],
     )
 
-    with pytest.raises(SystemExit):
-        parse_args()
+    args = parse_args()
+
+    assert args.dataset_config is None
+    assert args.train_config.name == "narrowband_impaired_train_all.yaml"
+    assert args.val_config.name == "narrowband_impaired_val_all.yaml"
+    assert args.test_config == args.val_config
 
 
 def test_load_split_configs_uses_shared_config_for_all_splits(
@@ -505,19 +509,10 @@ def test_main_configures_and_runs_optimization(
         },
     )
 
-    def fake_create_trial_loggers(**kwargs: Any) -> FakeCSVLogger:
-        training_logger = FakeCSVLogger(
-            save_dir=kwargs["trial_dir"],
-            name="lightning_logs",
-            version="",
-        )
-        training_logger.log_hyperparams(kwargs["hyperparameters"])
-        return training_logger
-
     monkeypatch.setattr(
         search_module,
-        "create_trial_loggers",
-        fake_create_trial_loggers,
+        "CSVLogger",
+        FakeCSVLogger,
     )
 
     training_calls: list[dict[str, Any]] = []
@@ -616,6 +611,9 @@ def test_main_configures_and_runs_optimization(
     assert len(training_calls) == 2
     assert all(call["dataset_root"] == dataset_root for call in training_calls)
     assert all(call["dataset_mode"] == "existing" for call in training_calls)
+    assert training_calls[0]["train_cfg"] is training_calls[1]["train_cfg"]
+    assert training_calls[0]["val_cfg"] is training_calls[1]["val_cfg"]
+    assert training_calls[0]["test_cfg"] is training_calls[1]["test_cfg"]
 
     training_call = training_calls[0]
 

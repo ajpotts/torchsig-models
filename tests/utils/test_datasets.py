@@ -414,10 +414,16 @@ def test_prepare_torchsig_datasets_loads_separate_dataset_id_directories(
 ):
     configs = [DummyConfig(), DummyConfig(), DummyConfig()]
     dataset_ids = ("narrowband_train", "narrowband_val", "narrowband_test")
+    markers: list[tuple[Path, bytes]] = []
     for cfg, dataset_id in zip(configs, dataset_ids, strict=True):
         cfg.dataset_id = dataset_id
         cfg.dataset_metadata = {"class_names": ["bpsk", "qpsk"]}
-        (tmp_path / dataset_id).mkdir()
+        split_root = tmp_path / dataset_id
+        split_root.mkdir()
+        marker = split_root / "existing-data.h5"
+        contents = f"original-{dataset_id}".encode()
+        marker.write_bytes(contents)
+        markers.append((marker, contents))
 
     static_datasets = [MagicMock(), MagicMock(), MagicMock()]
     static_dataset_cls.side_effect = static_datasets
@@ -427,9 +433,11 @@ def test_prepare_torchsig_datasets_loads_separate_dataset_id_directories(
         *configs,
         dataset_root=tmp_path,
         overwrite=False,
+        dataset_mode="existing",
     )
 
     dataset_creator_cls.assert_not_called()
+    assert all(marker.read_bytes() == contents for marker, contents in markers)
     assert [call.kwargs["root"] for call in static_dataset_cls.call_args_list] == [
         str(tmp_path / dataset_id) for dataset_id in dataset_ids
     ]
@@ -538,8 +546,7 @@ def test_create_dataset_mode_explicitly_overwrites_existing_splits(
 
     assert dataset_creator_cls.call_count == 3
     assert all(
-        call.kwargs["overwrite"] is True
-        for call in dataset_creator_cls.call_args_list
+        call.kwargs["overwrite"] is True for call in dataset_creator_cls.call_args_list
     )
     assert dataset_creator_cls.return_value.create.call_count == 3
 
