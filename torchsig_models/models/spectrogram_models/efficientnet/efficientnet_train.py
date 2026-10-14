@@ -28,6 +28,7 @@ from torchsig_models.models.spectrogram_models.efficientnet import (
 from torchsig_models.utils.datasets import (
     DatasetMode,
     StorageBackend,
+    default_narrowband_config,
     prepare_torchsig_datasets,
 )
 from torchsig_models.utils.normalization import (
@@ -462,7 +463,12 @@ def parse_args() -> argparse.Namespace:
         help="Lightning device count or selection, such as 1 or auto.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.dataset_config is None:
+        args.train_config = args.train_config or default_narrowband_config("train")
+        args.val_config = args.val_config or default_narrowband_config("val")
+        args.test_config = args.test_config or default_narrowband_config("val")
+    return args
 
 
 def _resolve_config_path(

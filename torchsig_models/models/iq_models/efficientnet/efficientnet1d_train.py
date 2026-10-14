@@ -28,6 +28,7 @@ from torchsig_models.models.iq_models.efficientnet import (
 from torchsig_models.utils.datasets import (
     DatasetMode,
     StorageBackend,
+    default_narrowband_config,
     prepare_torchsig_datasets,
 )
 from torchsig_models.utils.normalization import (
@@ -456,7 +457,12 @@ def parse_args() -> argparse.Namespace:
         help="Regenerate datasets.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.config is None:
+        args.train_config = args.train_config or default_narrowband_config("train")
+        args.val_config = args.val_config or default_narrowband_config("val")
+        args.test_config = args.test_config or default_narrowband_config("val")
+    return args
 
 
 def _resolve_config_path(

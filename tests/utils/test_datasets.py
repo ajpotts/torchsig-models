@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -461,6 +462,86 @@ def test_prepare_torchsig_datasets_loads_existing_nested_directories(
     assert [call.kwargs["root"] for call in static_dataset_cls.call_args_list] == [
         str(split_root / split) for split in ("train", "val", "test")
     ]
+
+
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+def test_prepare_torchsig_datasets_loads_read_only_data_without_modification(
+    static_dataset_cls,
+    dataset_creator_cls,
+    dataloader_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    dataset_root = tmp_path / cfg.dataset_id
+    markers: list[tuple[Path, bytes]] = []
+    for split in ("train", "val", "test"):
+        split_root = dataset_root / split
+        split_root.mkdir(parents=True)
+        marker = split_root / "existing-data.h5"
+        contents = f"original-{split}".encode()
+        marker.write_bytes(contents)
+        marker.chmod(0o444)
+        split_root.chmod(0o555)
+        markers.append((marker, contents))
+    dataset_root.chmod(0o555)
+
+    dataloader_cls.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+    try:
+        prepare_torchsig_datasets(
+            cfg,
+            cfg,
+            cfg,
+            dataset_root=tmp_path,
+            overwrite=False,
+            dataset_mode="existing",
+        )
+
+        dataset_creator_cls.assert_not_called()
+        assert [marker.read_bytes() for marker, _ in markers] == [
+            contents for _, contents in markers
+        ]
+    finally:
+        dataset_root.chmod(0o755)
+        for marker, _ in markers:
+            marker.parent.chmod(0o755)
+            marker.chmod(0o644)
+
+
+@patch("torchsig_models.utils.datasets.StaticTorchSigDataset")
+@patch("torchsig_models.utils.datasets.DatasetCreator")
+@patch("torchsig_models.utils.datasets.WorkerSeedingDataLoader")
+@patch("torchsig_models.utils.datasets.TorchSigIterableDataset")
+def test_create_dataset_mode_explicitly_overwrites_existing_splits(
+    iterable_dataset_cls,
+    dataloader_cls,
+    dataset_creator_cls,
+    static_dataset_cls,
+    tmp_path,
+):
+    cfg = DummyConfig()
+    for split in ("train", "val", "test"):
+        (tmp_path / cfg.dataset_id / split).mkdir(parents=True)
+
+    iterable_dataset_cls.return_value.class_names = ["tone"]
+    dataloader_cls.side_effect = [MagicMock() for _ in range(6)]
+
+    prepare_torchsig_datasets(
+        cfg,
+        cfg,
+        cfg,
+        dataset_root=tmp_path,
+        overwrite=True,
+        dataset_mode="create",
+    )
+
+    assert dataset_creator_cls.call_count == 3
+    assert all(
+        call.kwargs["overwrite"] is True
+        for call in dataset_creator_cls.call_args_list
+    )
+    assert dataset_creator_cls.return_value.create.call_count == 3
 
 
 @patch("torchsig_models.utils.datasets.DatasetCreator")

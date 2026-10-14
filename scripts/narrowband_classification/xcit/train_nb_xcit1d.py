@@ -9,12 +9,18 @@ import argparse
 from pathlib import Path
 
 from torchsig_models.models.iq_models.xcit.xcit1d_train import xcit1d_trainer
+from torchsig_models.utils.datasets import default_narrowband_config
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path, help="Path to dataset.")
-    parser.add_argument("--config", required=True, type=Path, help="Path to dataset config yaml.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=default_narrowband_config("train"),
+        help="Path to dataset config YAML.",
+    )
     parser.add_argument("--pt_dir", required=True, type=Path, help="Path to place checkpoints.")
     parser.add_argument("--metrics_dir", required=True, type=Path, help="Path to place metric graphs.")
     parser.add_argument("--num_epochs", type=int, default=50, help="Number of epochs to train for. Default is 50.")

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import torch
+import torchsig
 import yaml
 from torchsig.datasets.datasets import (
     StaticTorchSigDataset,
@@ -32,6 +33,7 @@ from torchsig.utils.writer import DatasetCreator
 __all__ = [
     "DatasetMode",
     "StorageBackend",
+    "default_narrowband_config",
     "prepare_torchsig_datasets",
     "prepare_torchsig_inference_dataset",
 ]
@@ -39,6 +41,24 @@ __all__ = [
 
 DatasetMode = Literal["auto", "create", "existing"]
 StorageBackend = Literal["legacy", "packed", "homogeneous"]
+
+
+def default_narrowband_config(split: Literal["train", "val"]) -> Path:
+    """Return an installed TorchSig impaired narrowband dataset config.
+
+    Args:
+        split: Dataset split whose default configuration should be returned.
+
+    Returns:
+        Path to the corresponding config in TorchSig's ``default_configs``
+        package directory.
+    """
+    return (
+        Path(torchsig.__file__).resolve().parent
+        / "datasets"
+        / "default_configs"
+        / f"narrowband_impaired_{split}_all.yaml"
+    )
 
 
 _STORAGE_BACKENDS: dict[
