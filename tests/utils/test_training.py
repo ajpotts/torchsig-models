@@ -206,6 +206,23 @@ def test_signal_classifier_saves_class_names_in_checkpoint_hyperparameters():
     assert classifier.hparams["class_names"] == class_names
 
 
+def test_signal_classifier_saves_model_metadata_in_checkpoint_hyperparameters():
+    model = torch.nn.Linear(4, 2)
+    optimizer = torch.optim.Adam(model.parameters())
+    metadata = {"schema_version": 1, "model": {"name": "example"}}
+
+    classifier = SignalClassifier(
+        model=model,
+        criterion=torch.nn.CrossEntropyLoss(),
+        optimizer=optimizer,
+        num_classes=2,
+        model_metadata=metadata,
+    )
+
+    assert classifier.model_metadata == metadata
+    assert classifier.hparams["model_metadata"] == metadata
+
+
 @pytest.mark.slow_no_gpu
 def test_narrowband_training(
     narrowband_dataloaders,

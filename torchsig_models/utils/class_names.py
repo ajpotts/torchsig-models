@@ -29,9 +29,7 @@ def validate_class_names(
     if any(not isinstance(name, str) for name in names):
         raise TypeError("class_names must contain only strings.")
     if len(names) != num_classes:
-        raise ValueError(
-            f"Expected {num_classes} class names, received {len(names)}."
-        )
+        raise ValueError(f"Expected {num_classes} class names, received {len(names)}.")
     if len(set(names)) != len(names):
         raise ValueError("class_names must not contain duplicates.")
     return names
@@ -48,4 +46,10 @@ def checkpoint_class_names(
     """
     hyperparameters = checkpoint.get("hyper_parameters", {})
     names = hyperparameters.get("class_names")
+    if names is None:
+        metadata = hyperparameters.get("model_metadata", {})
+        if isinstance(metadata, dict):
+            output = metadata.get("output", {})
+            if isinstance(output, dict):
+                names = output.get("class_names")
     return validate_class_names(names, num_classes)

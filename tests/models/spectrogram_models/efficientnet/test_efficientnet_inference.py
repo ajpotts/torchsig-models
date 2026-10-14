@@ -125,7 +125,31 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
             "model.layer.weight": torch.ones(1),
         },
         "hyper_parameters": {
-            "class_names": ["first", "second", "third"],
+            "model_metadata": {
+                "schema_version": 1,
+                "model": {
+                    "family": "efficientnet",
+                    "name": "efficientnet_b0",
+                    "input_channels": 1,
+                    "num_classes": 3,
+                    "drop_path_rate": 0.15,
+                    "drop_rate": 0.35,
+                },
+                "input": {
+                    "representation": "spectrogram",
+                    "dtype": "float32",
+                    "layout": "batch_channels_frequency_time",
+                    "preprocessing": {
+                        "transform": "Spectrogram",
+                        "fft_size": 128,
+                    },
+                },
+                "output": {
+                    "class_names": ["first", "second", "third"],
+                    "postprocessing": "argmax",
+                },
+                "provenance": {"torchsig_models_version": "1.0.0"},
+            },
         },
     }
     torch_load = MagicMock(return_value=checkpoint)
@@ -167,7 +191,6 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
         batch_size=16,
         num_workers=2,
         num_classes=3,
-        model_name="efficientnet_b0",
     )
 
     load_training_params.assert_called_once_with(
@@ -176,8 +199,8 @@ def test_efficientnet_inference_runs_evaluation_pipeline(
     )
     model_factory.assert_called_once_with(
         num_classes=3,
-        drop_path_rate=0.1,
-        drop_rate=0.25,
+        drop_path_rate=0.15,
+        drop_rate=0.35,
         normalization="sample",
         normalization_eps=1e-6,
         class_names=["first", "second", "third"],

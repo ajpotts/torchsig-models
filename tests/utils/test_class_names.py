@@ -38,3 +38,13 @@ def test_checkpoint_class_names_reads_lightning_hyperparameters() -> None:
 
 def test_checkpoint_class_names_does_not_guess_legacy_mapping() -> None:
     assert checkpoint_class_names({"state_dict": {}}, 57) is None
+
+
+def test_checkpoint_class_names_reads_versioned_model_metadata() -> None:
+    checkpoint = {
+        "hyper_parameters": {
+            "model_metadata": {"output": {"class_names": ["first", "second"]}}
+        }
+    }
+
+    assert checkpoint_class_names(checkpoint, 2) == ["first", "second"]

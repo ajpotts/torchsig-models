@@ -240,6 +240,7 @@ class SignalClassifier(pl.LightningModule):
         clamp_logits: bool = True,
         num_classes: int | None = None,
         class_names: list[str] | None = None,
+        model_metadata: dict[str, object] | None = None,
     ) -> None:
         super().__init__()
 
@@ -251,6 +252,7 @@ class SignalClassifier(pl.LightningModule):
             else None
         )
         model.class_names = self.class_names
+        self.model_metadata = model_metadata
 
         self.save_hyperparameters(
             ignore=["model", "criterion", "optimizer", "scheduler"]
@@ -420,6 +422,7 @@ def train_validate(
     max_epochs: int,
     num_classes: int,
     class_names: list[str] | None = None,
+    model_metadata: dict[str, object] | None = None,
     metrics_dir: str | Path | None = None,
     checkpoint_dir: str | Path | None = None,
     accelerator: str = "auto",
@@ -472,6 +475,11 @@ def train_validate(
         class_names:
             Optional labels ordered by classifier output index. These are
             validated and saved in Lightning checkpoints.
+
+        model_metadata:
+            Optional versioned description of model construction, input
+            preprocessing, outputs, and provenance. Saved in Lightning
+            checkpoints so inference can reconstruct and validate the model.
 
         metrics_dir:
             Optional directory used by
@@ -529,6 +537,7 @@ def train_validate(
         clamp_logits=clamp_logits,
         num_classes=num_classes,
         class_names=class_names,
+        model_metadata=model_metadata,
     )
 
     metrics_callback = ClassifierMetricsTrackerCallback(

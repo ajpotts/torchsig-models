@@ -24,6 +24,10 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
     load_training_params,
 )
 from torchsig_models.utils.class_names import checkpoint_class_names
+from torchsig_models.utils.checkpoint_metadata import (
+    checkpoint_metadata,
+    resolve_checkpoint_model_name,
+)
 from torchsig_models.utils.training import evaluate_classifier, configure_determinism
 from torchsig_models.utils.normalization import (
     NormalizationMode,
@@ -76,7 +80,7 @@ def efficientnet1d_inference(
     num_workers: int = 8,
     num_classes: int | None = None,
     class_names: list[str] | None = None,
-    model_name: EfficientNetModelName = "efficientnet_b4",
+    model_name: EfficientNetModelName | None = None,
     normalization: NormalizationMode | None = None,
 ) -> float:
     """Evaluate a trained EfficientNet-1D model on a static TorchSig dataset.
@@ -98,7 +102,8 @@ def efficientnet1d_inference(
             from the checkpoint classifier weights.
         class_names: Optional ordered labels for a legacy or weights-only
             checkpoint. Embedded checkpoint metadata takes precedence.
-        model_name: EfficientNet architecture to instantiate.
+        model_name: Optional EfficientNet architecture override. New checkpoints
+            restore this automatically; legacy checkpoints default to B4.
         normalization: Optional normalization override. Dataset statistics are
             restored from new checkpoints; legacy checkpoints default to
             per-sample normalization.
@@ -112,21 +117,31 @@ def efficientnet1d_inference(
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    params = load_training_params(
-        model_name,
-        params_path=params_path,
-    )
-    seed = params.get("seed", 42)
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    seed_everything(seed, workers=True)
-    configure_determinism()
-
     checkpoint = torch.load(checkpoint_path, map_location=device)
+    metadata = checkpoint_metadata(checkpoint, expected_representation="iq")
+    resolved_model_name = resolve_checkpoint_model_name(
+        metadata,
+        model_name,
+        legacy_default="efficientnet_b4",
+    )
+    if resolved_model_name not in MODEL_FACTORY:
+        raise ValueError(f"Unsupported checkpoint model: {resolved_model_name!r}.")
+    params = load_training_params(
+        resolved_model_name,
+        params_path=params_path,
+    )
+    seed_everything(params.get("seed", 42), workers=True)
+    configure_determinism()
     state_dict = checkpoint.get("state_dict", checkpoint)
     state_dict = _strip_lightning_prefix(state_dict)
     num_classes = _resolve_num_classes(state_dict, num_classes)
+    stored_model = metadata["model"] if metadata is not None else None
+    if stored_model is not None and stored_model["num_classes"] != num_classes:
+        raise ValueError("Checkpoint metadata num_classes conflicts with its weights.")
+    if stored_model is not None and stored_model["input_channels"] != 2:
+        raise ValueError("IQ EfficientNet checkpoints must use two input channels.")
     stored_class_names = checkpoint_class_names(checkpoint, num_classes)
     if stored_class_names is not None:
         class_names = stored_class_names
@@ -140,13 +155,21 @@ def efficientnet1d_inference(
     )
     model_kwargs: dict[str, Any] = {
         "num_classes": num_classes,
-        "drop_path_rate": params.get("drop_path", 0.2),
-        "drop_rate": params.get("drop_rate", 0.3),
+        "drop_path_rate": (
+            stored_model["drop_path_rate"]
+            if stored_model is not None
+            else params.get("drop_path", 0.2)
+        ),
+        "drop_rate": (
+            stored_model["drop_rate"]
+            if stored_model is not None
+            else params.get("drop_rate", 0.3)
+        ),
         **normalization_kwargs,
     }
     if class_names is not None:
         model_kwargs["class_names"] = class_names
-    model = MODEL_FACTORY[model_name](**model_kwargs)
+    model = MODEL_FACTORY[resolved_model_name](**model_kwargs)
 
     missing_keys, unexpected_keys = model.load_state_dict(
         state_dict,
@@ -215,8 +238,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         choices=["efficientnet_b0", "efficientnet_b2", "efficientnet_b4"],
-        default="efficientnet_b4",
-        help="EfficientNet architecture to instantiate.",
+        help="EfficientNet architecture override. Restored from new checkpoints.",
     )
 
     parser.add_argument(
