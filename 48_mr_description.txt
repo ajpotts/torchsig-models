@@ -1,5 +1,5 @@
 Summary
-=======
+-------
 
 - Expand automated coverage for supported static dataset directory layouts.
 - Verify existing and read-only datasets are reused without generation or
@@ -8,7 +8,7 @@ Summary
 - Exercise repeated Optuna trials against the same prepared static dataset.
 
 Motivation
-==========
+----------
 
 Static TorchSig datasets may be stored as nested train/validation/test splits
 or as separate split-specific dataset directories. Hyperparameter searches
@@ -18,7 +18,7 @@ regression coverage so future dataset preparation changes cannot silently
 reintroduce generation or writes.
 
 Implementation
-==============
+--------------
 
 The dataset utility tests now cover both supported directory layouts, loading
 from read-only split directories, preservation of existing file contents,
@@ -34,8 +34,13 @@ All tests use pytest temporary directories and mocks. They do not access shared
 storage, generate real TorchSig samples, or train a model.
 
 Testing
-=======
+-------
 
-- Run the focused dataset and hyperparameter-search tests.
-- Run the complete pytest suite.
+- `NUMBA_DISABLE_JIT=1 pytest -q tests/utils/test_datasets.py tests/models/spectrogram_models/efficientnet/test_efficientnet_hyperparameter_search.py`
+  passes with 48 tests.
+- Ruff lint and format checks pass for both changed test modules.
+- `git diff --check` passes.
+- The complete pytest suite is currently blocked during collection by the
+  unrelated missing `_TrialMLFlowLogger` import in
+  `tests/utils/test_hyperperameter_search.py`.
 - Run Ruff and git diff whitespace validation on the changed files.
