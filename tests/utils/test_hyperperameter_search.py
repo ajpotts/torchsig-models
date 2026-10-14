@@ -107,13 +107,13 @@ class RecordingTrial:
 
 @pytest.mark.parametrize("config_path", PACKAGED_SEARCH_CONFIGS)
 def test_packaged_search_configs_include_normalization(config_path: Path) -> None:
-    """Search every packaged model over all supported normalization modes."""
+    """Search every packaged model over normalized input modes."""
     config = load_search_config(config_path)
 
     assert config["n_trials"] == 30
     assert config["search_space"]["normalization"] == {
         "type": "categorical",
-        "choices": ["dataset", "sample", "none"],
+        "choices": ["dataset", "sample"],
     }
 
 

@@ -6,7 +6,7 @@ n_trials: 30
 search_space:
   normalization:
     type: categorical
-    choices: [dataset, sample, none]
+    choices: [dataset, sample]
 
   learning_rate:
     type: float
