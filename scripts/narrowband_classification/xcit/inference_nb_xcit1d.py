@@ -9,12 +9,18 @@ import argparse
 from pathlib import Path
 
 from torchsig_models.models.iq_models.xcit.xcit1d_inference import xcit1d_inference
+from torchsig_models.utils.datasets import default_narrowband_config
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run XCiT 1D classifier inference.")
     parser.add_argument("--root", required=True, help="Path to TorchSig dataset root.")
-    parser.add_argument("--config_file", required=True, help="Path to YAML config file.")
+    parser.add_argument(
+        "--config_file",
+        type=Path,
+        default=default_narrowband_config("val"),
+        help="Path to YAML config file.",
+    )
     parser.add_argument(
         "--checkpoint-path",
         required=True,

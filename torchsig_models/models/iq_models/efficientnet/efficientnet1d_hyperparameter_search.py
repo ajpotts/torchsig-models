@@ -19,7 +19,10 @@ from torchsig_models.models.iq_models.efficientnet.efficientnet1d_train import (
     load_training_params,
     train_efficientnet_iq,
 )
-from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.datasets import (
+    default_narrowband_config,
+    prepare_torchsig_datasets,
+)
 from torchsig_models.utils.hyperparameter_search import (
     load_search_config,
     run_hyperparameter_optimization,
@@ -144,8 +147,10 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
-    if args.dataset_config is None and args.train_config is None:
-        parser.error("one of --dataset-config or --train-config is required")
+    if args.dataset_config is None:
+        args.train_config = args.train_config or default_narrowband_config("train")
+        args.val_config = args.val_config or default_narrowband_config("val")
+        args.test_config = args.test_config or default_narrowband_config("val")
     if args.overwrite and args.existing_datasets:
         parser.error("--overwrite cannot be combined with --existing-datasets")
 

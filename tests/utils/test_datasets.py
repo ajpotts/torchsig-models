@@ -15,9 +15,20 @@ from torchsig_models.utils.datasets import (
     _create_static_dataset,
     _dataset_metadata,
     _transforms,
+    default_narrowband_config,
     prepare_torchsig_datasets,
     prepare_torchsig_inference_dataset,
 )
+
+
+@pytest.mark.parametrize("split", ["train", "val"])
+def test_default_narrowband_config_uses_installed_impaired_config(split: str) -> None:
+    """Resolve defaults from TorchSig's installed config directory."""
+    config_path = default_narrowband_config(split)  # type: ignore[arg-type]
+
+    assert config_path.name == f"narrowband_impaired_{split}_all.yaml"
+    assert config_path.parent.name == "default_configs"
+    assert config_path.is_file()
 
 
 class DummyConfig:

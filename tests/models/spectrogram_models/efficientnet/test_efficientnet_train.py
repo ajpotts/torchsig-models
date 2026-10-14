@@ -293,15 +293,15 @@ def test_parse_args_uses_defaults(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["efficientnet_train.py", "--dataset-config", "dataset.yaml"],
+        ["efficientnet_train.py"],
     )
 
     args = parse_args()
 
-    assert args.dataset_config == Path("dataset.yaml")
-    assert args.train_config is None
-    assert args.val_config is None
-    assert args.test_config is None
+    assert args.dataset_config is None
+    assert args.train_config.name == "narrowband_impaired_train_all.yaml"
+    assert args.val_config.name == "narrowband_impaired_val_all.yaml"
+    assert args.test_config.name == "narrowband_impaired_val_all.yaml"
     assert args.params is None
     assert args.model == "efficientnet_b0"
     assert args.dataset_length is None
