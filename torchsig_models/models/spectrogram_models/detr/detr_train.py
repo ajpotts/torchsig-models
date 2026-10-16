@@ -16,10 +16,15 @@ import yaml
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.transforms.metadata_transforms import YOLOLabel
 from torchsig.transforms.transforms import Spectrogram
+from torchsig.utils.file_handlers.base_handler import FileReader, FileWriter
 from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.spectrogram_models.detr.detr import rtdetr_l
-from torchsig_models.utils.datasets import prepare_torchsig_datasets
+from torchsig_models.utils.datasets import (
+    DatasetMode,
+    StorageBackend,
+    prepare_torchsig_datasets,
+)
 from torchsig_models.utils.normalization import (
     compute_dataset_channel_stats,
     resolve_normalization_mode,
@@ -111,9 +116,7 @@ def spectrogram_to_uint8(
     else:
         raise ValueError(f"Unsupported normalization mode: {normalization!r}.")
 
-    normalized = np.clip(
-        (values - center) / max(scale, eps), -clip_sigma, clip_sigma
-    )
+    normalized = np.clip((values - center) / max(scale, eps), -clip_sigma, clip_sigma)
     encoded = (normalized + clip_sigma) * (255.0 / (2.0 * clip_sigma))
     return np.rint(encoded).astype(np.uint8)
 
@@ -221,11 +224,44 @@ def train_detr(
     overwrite: bool = False,
     model_name: DETRModelName = "rtdetr_l",
     signal_generators: str | list[str] = "all",
+    file_handler: type[FileWriter] | None = None,
+    file_reader: type[FileReader] | None = None,
+    file_handler_options: dict[str, Any] | None = None,
+    dataset_mode: DatasetMode = "auto",
+    storage_backend: StorageBackend | None = None,
     device: str | int | None = None,
     workers: int = 1,
     evaluate_test: bool = True,
 ) -> dict[str, Any]:
-    """Train and optionally test RT-DETR on multi-signal TorchSig data."""
+    """Train and optionally test RT-DETR on multi-signal TorchSig data.
+
+    Dataset storage arguments mirror the other TorchSig model trainers. Set
+    ``dataset_mode="existing"`` to guarantee that training never generates or
+    overwrites a static dataset.
+
+    Args:
+        train_cfg: TorchSig configuration for the training split.
+        val_cfg: TorchSig configuration for the validation split.
+        test_cfg: TorchSig configuration for the test split.
+        params: Ultralytics and normalization training parameters.
+        output_dir: Directory for exported data, checkpoints, and metrics.
+        dataset_root: Root containing generated or existing TorchSig datasets.
+        overwrite: Whether generated and exported datasets may be replaced.
+        model_name: RT-DETR architecture to train.
+        signal_generators: Signal generators used for dataset creation.
+        file_handler: Optional TorchSig storage writer override.
+        file_reader: Optional TorchSig storage reader override.
+        file_handler_options: Optional storage-writer keyword arguments.
+        dataset_mode: Dataset creation/loading policy.
+        storage_backend: Optional named TorchSig storage backend override.
+        device: Ultralytics device selection.
+        workers: Number of Ultralytics data-loading workers.
+        evaluate_test: Evaluate the best model on the test split after training.
+
+    Returns:
+        Training artifacts, metric summaries, dataset metadata, and the best
+        checkpoint path.
+    """
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     train_loader, val_loader, test_loader, data_info = prepare_torchsig_datasets(
@@ -239,6 +275,11 @@ def train_detr(
         transforms=_spectrogram_transforms(train_cfg),
         target_labels=["yolo_label"],
         collate_fn=_detection_collate,
+        file_handler=file_handler,
+        file_reader=file_reader,
+        file_handler_options=file_handler_options,
+        dataset_mode=dataset_mode,
+        storage_backend=storage_backend,
     )
 
     normalization = resolve_normalization_mode(
@@ -345,8 +386,7 @@ def train_detr(
         yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8"
     )
     (output_dir / "metrics.json").write_text(
-        json.dumps({"validation": val_summary, "test": test_summary}, indent=2)
-        + "\n",
+        json.dumps({"validation": val_summary, "test": test_summary}, indent=2) + "\n",
         encoding="utf-8",
     )
     return {
@@ -379,6 +419,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("runs"))
     parser.add_argument("--dataset-length", type=int)
     parser.add_argument("--dataset-id")
+    parser.add_argument(
+        "--storage-backend",
+        choices=["legacy", "packed", "homogeneous"],
+        help="Override the dataset storage backend configured in YAML.",
+    )
+    parser.add_argument(
+        "--existing-datasets",
+        action="store_true",
+        help="Require existing static splits and never generate datasets.",
+    )
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--signal-generators", nargs="+", default="all")
@@ -388,6 +438,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.dataset_config is None and args.train_config is None:
         parser.error("one of --dataset-config or --train-config is required")
+    if args.overwrite and args.existing_datasets:
+        parser.error("--overwrite cannot be combined with --existing-datasets")
     return args
 
 
@@ -438,10 +490,17 @@ def main() -> None:
         overwrite=args.overwrite,
         model_name=args.model,
         signal_generators=args.signal_generators,
+        dataset_mode="existing" if args.existing_datasets else "auto",
+        storage_backend=args.storage_backend,
         device=args.device,
         workers=args.workers,
     )
-    print(json.dumps({"validation": result["val_summary"], "test": result["test_summary"]}, indent=2))
+    print(
+        json.dumps(
+            {"validation": result["val_summary"], "test": result["test_summary"]},
+            indent=2,
+        )
+    )
     print(f"Best checkpoint: {result['best_checkpoint']}")
 
 

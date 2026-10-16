@@ -15,9 +15,12 @@ from torchsig.utils.yaml import load_config_from_yaml
 
 from torchsig_models.models.spectrogram_models.detr.detr_train import (
     DETRModelName,
+    _detection_collate,
+    _spectrogram_transforms,
     load_training_params,
     train_detr,
 )
+from torchsig_models.utils.datasets import prepare_torchsig_datasets
 from torchsig_models.utils.hyperparameter_search import (
     load_search_config,
     run_hyperparameter_optimization,
@@ -36,7 +39,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--search-config",
         type=Path,
-        default=Path(__file__).parent / "search_configs" / "rtdetr_l_search_config.yaml",
+        default=Path(__file__).parent
+        / "search_configs"
+        / "rtdetr_l_search_config.yaml",
     )
     parser.add_argument("--params", type=Path)
     parser.add_argument("--model", choices=["rtdetr_l"], default="rtdetr_l")
@@ -44,6 +49,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("runs/optimization"))
     parser.add_argument("--dataset-length", type=int)
     parser.add_argument("--dataset-id")
+    parser.add_argument(
+        "--storage-backend",
+        choices=["legacy", "packed", "homogeneous"],
+        help="Override the dataset storage backend configured in YAML.",
+    )
+    parser.add_argument(
+        "--existing-datasets",
+        action="store_true",
+        help="Require existing static splits and never generate datasets.",
+    )
     parser.add_argument("--n-trials", type=int)
     parser.add_argument("--max-epochs", type=int)
     parser.add_argument("--signal-generators", nargs="+", default="all")
@@ -57,6 +72,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.dataset_config is None and args.train_config is None:
         parser.error("one of --dataset-config or --train-config is required")
+    if args.overwrite and args.existing_datasets:
+        parser.error("--overwrite cannot be combined with --existing-datasets")
     return args
 
 
@@ -65,8 +82,12 @@ def _load_split_configs(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     if train_path is None:
         raise ValueError("A training dataset config must be provided.")
     train_cfg = load_config_from_yaml(train_path)
-    val_cfg = load_config_from_yaml(args.val_config or args.dataset_config or train_path)
-    test_cfg = load_config_from_yaml(args.test_config or args.dataset_config or train_path)
+    val_cfg = load_config_from_yaml(
+        args.val_config or args.dataset_config or train_path
+    )
+    test_cfg = load_config_from_yaml(
+        args.test_config or args.dataset_config or train_path
+    )
     if args.val_config is None:
         val_cfg = replace(val_cfg, seed=train_cfg.seed + 1)
     if args.test_config is None:
@@ -133,20 +154,41 @@ def main() -> None:
     n_trials = args.n_trials or search_config.get("n_trials", 20)
     optimization_dir = args.output_dir / train_cfg.dataset_id / model_name
 
+    # Resolve or create TorchSig splits once. Trials reopen the same static
+    # data and therefore cannot regenerate it with a different batch size.
+    prepare_torchsig_datasets(
+        train_cfg,
+        val_cfg,
+        test_cfg,
+        dataset_root=args.dataset_root,
+        batch_size=int(base_params.get("batch_size", 2)),
+        overwrite=args.overwrite,
+        signal_generators=args.signal_generators,
+        transforms=_spectrogram_transforms(train_cfg),
+        target_labels=["yolo_label"],
+        collate_fn=_detection_collate,
+        dataset_mode="existing" if args.existing_datasets else "auto",
+        storage_backend=args.storage_backend,
+    )
+
     def train_fn(
         params: dict[str, Any], trial_dir: Path, trial: optuna.Trial
     ) -> dict[str, Any]:
         logger.info("Starting trial %s in %s", trial.number, trial_dir.resolve())
+        trial_params = params.copy()
+        trial_params.pop("model_name", None)
         result = train_detr(
             train_cfg,
             val_cfg,
             test_cfg,
-            params,
+            trial_params,
             trial_dir,
             dataset_root=args.dataset_root,
             overwrite=args.overwrite,
             model_name=model_name,
             signal_generators=args.signal_generators,
+            dataset_mode="existing",
+            storage_backend=args.storage_backend,
             device=args.device,
             workers=args.workers,
             evaluate_test=False,

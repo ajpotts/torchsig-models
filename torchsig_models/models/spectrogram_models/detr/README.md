@@ -25,6 +25,21 @@ python torchsig_models/models/spectrogram_models/detr/detr_train.py \
   --batch-size 2
 ```
 
+Existing static splits can be reused without allowing generation, and the
+storage reader can be selected explicitly:
+
+```bash
+python torchsig_models/models/spectrogram_models/detr/detr_train.py \
+  --dataset-config path/to/wideband.yaml \
+  --existing-datasets \
+  --storage-backend packed
+```
+
+Hyperparameter search resolves or creates the TorchSig splits once before the
+first trial. Every trial then reopens those splits in existing-dataset mode,
+avoiding repeated generation while still exporting its own normalized
+Ultralytics image dataset.
+
 ## Evaluation
 
 ```bash
