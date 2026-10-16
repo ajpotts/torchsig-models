@@ -13,6 +13,7 @@ import torch
 import yaml
 
 import torchsig_models.models.spectrogram_models.detr.detr_inference as inference_module
+import torchsig_models.models.spectrogram_models.detr.detr_hyperparameter_search as search_module
 import torchsig_models.models.spectrogram_models.detr.detr_train as training_module
 from torchsig_models.models.spectrogram_models.detr.detr_inference import (
     detr_inference,
@@ -97,16 +98,15 @@ def test_train_uses_best_checkpoint_and_test_split(
 ) -> None:
     dataset = _Dataset(np.ones((4, 4), dtype=np.float32), [])
     loader = SimpleNamespace(dataset=dataset)
-    monkeypatch.setattr(
-        training_module,
-        "prepare_torchsig_datasets",
-        lambda *_args, **_kwargs: (
+    prepare_datasets = MagicMock(
+        return_value=(
             loader,
             loader,
             loader,
             {"class_names": ["tone", "ofdm-64"]},
-        ),
+        )
     )
+    monkeypatch.setattr(training_module, "prepare_torchsig_datasets", prepare_datasets)
     dataset_yaml = tmp_path / "dataset.yaml"
     dataset_yaml.write_text("names: [tone, ofdm-64]\n", encoding="utf-8")
     monkeypatch.setattr(
@@ -141,14 +141,114 @@ def test_train_uses_best_checkpoint_and_test_split(
             "normalization": "sample",
         },
         tmp_path / "run",
+        dataset_mode="existing",
+        storage_backend="packed",
     )
 
+    dataset_call = prepare_datasets.call_args.kwargs
+    assert dataset_call["dataset_mode"] == "existing"
+    assert dataset_call["storage_backend"] == "packed"
+    assert dataset_call["target_labels"] == ["yolo_label"]
     train_call = model.train.call_args.kwargs
     assert train_call["deterministic"] is False
     assert train_call["mosaic"] == 0.0
     assert model.val.call_args.kwargs["split"] == "test"
     assert result["best_checkpoint"].endswith("train/weights/best.pt")
     assert result["test_summary"]["map_50"] == pytest.approx(0.8)
+
+
+def test_hyperparameter_search_prepares_data_once_and_reuses_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Trials must reopen one prepared static dataset instead of regenerating it."""
+    cfg = SimpleNamespace(dataset_id="wideband", dataset_length=8, seed=7)
+    args = SimpleNamespace(
+        enable_mlflow=False,
+        env_file=tmp_path / ".env",
+        search_config=tmp_path / "search.yaml",
+        dataset_config=tmp_path / "dataset.yaml",
+        train_config=None,
+        val_config=None,
+        test_config=None,
+        dataset_length=None,
+        dataset_id=None,
+        model="rtdetr_l",
+        params=None,
+        max_epochs=None,
+        n_trials=2,
+        output_dir=tmp_path / "optimization",
+        dataset_root=tmp_path / "datasets",
+        overwrite=False,
+        signal_generators="all",
+        existing_datasets=False,
+        storage_backend="packed",
+        device="cpu",
+        workers=0,
+        mlflow_timeout=5,
+        mlflow_max_retries=0,
+    )
+    prepare_datasets = MagicMock()
+    train = MagicMock(
+        return_value={
+            "val_summary": {
+                "map": 0.5,
+                "map_50": 0.6,
+                "precision": 0.7,
+                "recall": 0.8,
+            }
+        }
+    )
+    study = SimpleNamespace(best_trial=SimpleNamespace(number=0, value=0.6, params={}))
+
+    monkeypatch.setattr(search_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        search_module,
+        "load_search_config",
+        lambda _path: {
+            "search_space": {},
+            "metric_name": "val_map_50",
+            "direction": "maximize",
+        },
+    )
+    monkeypatch.setattr(
+        search_module, "_load_split_configs", lambda _args: (cfg, cfg, cfg)
+    )
+    monkeypatch.setattr(
+        search_module,
+        "load_training_params",
+        lambda *_args, **_kwargs: {"batch_size": 2, "model_name": "rtdetr_l"},
+    )
+    monkeypatch.setattr(search_module, "prepare_torchsig_datasets", prepare_datasets)
+    monkeypatch.setattr(search_module, "train_detr", train)
+    monkeypatch.setattr(
+        search_module,
+        "run_hyperparameter_optimization",
+        lambda *, train_fn, output_dir, **_kwargs: (
+            train_fn(
+                {"batch_size": 1, "model_name": "rtdetr_l"},
+                output_dir / "0",
+                SimpleNamespace(number=0),
+            ),
+            train_fn(
+                {"batch_size": 2, "model_name": "rtdetr_l"},
+                output_dir / "1",
+                SimpleNamespace(number=1),
+            ),
+            study,
+        )[-1],
+    )
+
+    search_module.main()
+
+    prepare_datasets.assert_called_once()
+    assert prepare_datasets.call_args.kwargs["storage_backend"] == "packed"
+    assert train.call_count == 2
+    assert all(
+        call.kwargs["dataset_mode"] == "existing"
+        and call.kwargs["storage_backend"] == "packed"
+        and "model_name" not in call.args[3]
+        for call in train.call_args_list
+    )
 
 
 def test_inference_returns_normalized_detections(
