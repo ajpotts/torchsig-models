@@ -22,7 +22,10 @@ from anomalib.loggers import AnomalibTensorBoardLogger
 from anomalib.engine import Engine
 from anomalib.models import Draem
 
-from torchsig_models.adapters.anomalib_utils import TorchSigAnomalibDataModule
+from torchsig_models.adapters.anomalib_utils import (
+    TorchSigAnomalibDataModule,
+    write_anomalib_checkpoint_metadata,
+)
 
 
 set_float32_matmul_precision("high")
@@ -129,6 +132,14 @@ def main():
 
     # Training
     engine.train(model=model, datamodule=train_dm)
+    checkpoint_path = engine.trainer.checkpoint_callback.best_model_path
+    write_anomalib_checkpoint_metadata(
+        checkpoint_path,
+        model_name="DRAEM",
+        model_parameters=cfg["model"],
+        preprocessing={"transform": "anomalib_default"},
+        postprocessing="anomalib_default",
+    )
 
     # Evaluation
 
@@ -154,7 +165,7 @@ def main():
     test_results = engine.test(
         model = model, 
         datamodule = eval_dm,
-        ckpt_path = engine.trainer.checkpoint_callback.best_model_path,
+        ckpt_path = checkpoint_path,
     )
     with open(Path(output_dir) / "results" / "test_results.json", "w") as f:
         json.dump(test_results, f, indent=4)

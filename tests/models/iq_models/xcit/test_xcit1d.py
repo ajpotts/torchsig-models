@@ -165,6 +165,18 @@ def test_xcit_classifier_saves_and_exposes_class_names(monkeypatch) -> None:
 
     assert model.class_names == class_names
     assert model.hparams["class_names"] == class_names
+    assert model.hparams["model_metadata"]["model"] == {
+        "family": "xcit",
+        "name": "tiny_12_p16_224",
+        "input_channels": 2,
+        "num_classes": 2,
+        "ds_method": "downsample",
+        "ds_rate": 16,
+    }
+    assert model.hparams["model_metadata"]["input"]["preprocessing"] == {
+        "transform": "ComplexTo2D",
+        "complex_encoding": "real_imag_channels",
+    }
 
 
 def test_xcit_classifier_rejects_duplicate_class_names(monkeypatch) -> None:

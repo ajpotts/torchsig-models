@@ -20,6 +20,33 @@ from torchsig.signals.signal_types import Signal
 from torchsig.transforms.metadata_transforms import MetadataTransform
 from torchsig.transforms.transforms import SignalTransform
 from torchsig.utils.dsp import TorchSigRealDataType
+from torchsig_models.utils.checkpoint_metadata import (
+    build_checkpoint_metadata,
+    write_checkpoint_metadata_sidecar,
+)
+
+
+def write_anomalib_checkpoint_metadata(
+    checkpoint_path: str | Path,
+    *,
+    model_name: str,
+    model_parameters: dict[str, object],
+    preprocessing: dict[str, object],
+    postprocessing: str,
+) -> Path:
+    """Write inference metadata beside an Anomalib-owned checkpoint."""
+    metadata = build_checkpoint_metadata(
+        model_family="anomalib",
+        model_name=model_name,
+        input_representation="spectrogram",
+        input_channels=3,
+        num_classes=2,
+        class_names=["normal", "anomaly"],
+        preprocessing=preprocessing,
+        model_parameters=model_parameters,
+        postprocessing=postprocessing,
+    )
+    return write_checkpoint_metadata_sidecar(checkpoint_path, metadata)
 
 
 class TorchSigAnomalibDataset(AnomalibDataset):

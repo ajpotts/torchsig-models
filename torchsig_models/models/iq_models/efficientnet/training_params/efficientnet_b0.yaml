@@ -1,20 +1,15 @@
 experiment_name: iq_narrowband
 model_name: efficientnet_b0
 normalization: dataset
-normalization_eps: 1.0e-6
-precision: 32-true
-
+normalization_eps: 1.0e-06
+precision: bf16-mixed
 batch_size: 32
 max_epochs: 30
-precision: bf16-mixed
-learning_rate: 0.001
+learning_rate: 0.0006352611218521688
 patience: 5
-weight_decay: 2.5e-6
-
+weight_decay: 1.3336164385425445e-06
 pretrained: true
-
-drop_path: 0.4
-drop_rate: 0.2
-
+drop_path: 0.20135316837854392
+drop_rate: 0.19145667499032856
 num_channels: 2
-label_smoothing: 0.075
+label_smoothing: 0.032935259157027066

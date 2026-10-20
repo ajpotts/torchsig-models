@@ -9,6 +9,7 @@ from torch import Tensor
 
 from pytorch_lightning import LightningModule
 from torchsig_models.utils.class_names import validate_class_names
+from torchsig_models.utils.checkpoint_metadata import build_checkpoint_metadata
 
 __all__ = ["XCiT1d", "XCiTClassifier"]
 
@@ -186,10 +187,30 @@ class XCiTClassifier(LightningModule):
         learning_rate: float = 2.5e-4,
         weight_decay: float = 6.25e-5,
         class_names: list[str] | None = None,
+        model_metadata: dict[str, object] | None = None,
     ):
         super().__init__()
         self.class_names = validate_class_names(class_names, num_classes)
         self.save_hyperparameters()
+        if model_metadata is None:
+            model_metadata = build_checkpoint_metadata(
+                model_family="xcit",
+                model_name=xcit_version,
+                input_representation="iq",
+                input_channels=input_channels,
+                num_classes=num_classes,
+                class_names=self.class_names or [],
+                preprocessing={
+                    "transform": "ComplexTo2D",
+                    "complex_encoding": "real_imag_channels",
+                },
+                model_parameters={
+                    "ds_method": ds_method,
+                    "ds_rate": ds_rate,
+                },
+            )
+        self.model_metadata = model_metadata
+        self.hparams["model_metadata"] = model_metadata
         self.model = XCiT1d(
             input_channels=input_channels,
             n_features=num_classes,

@@ -35,6 +35,7 @@ from torchsig_models.utils.normalization import (
     compute_dataset_channel_stats,
     resolve_normalization_mode,
 )
+from torchsig_models.utils.checkpoint_metadata import build_checkpoint_metadata
 from torchsig_models.utils.training import (
     compute_num_params,
     evaluate_classifier,
@@ -269,6 +270,20 @@ def train_efficientnet_iq(
         **normalization_kwargs,
     )
 
+    model_metadata = build_checkpoint_metadata(
+        model_name=model_name,
+        input_representation="iq",
+        input_channels=2,
+        num_classes=num_classes,
+        class_names=class_list,
+        drop_path_rate=float(params.get("drop_path", 0.2)),
+        drop_rate=float(params.get("drop_rate", 0.3)),
+        preprocessing={
+            "transform": "identity",
+            "complex_encoding": "real_imag_channels",
+        },
+    )
+
     criterion = torch.nn.CrossEntropyLoss(
         label_smoothing=params.get("label_smoothing", 0.0),
     )
@@ -307,6 +322,7 @@ def train_efficientnet_iq(
         max_epochs=params["max_epochs"],
         num_classes=num_classes,
         class_names=class_list,
+        model_metadata=model_metadata,
         metrics_dir=metrics_dir,
         checkpoint_dir=checkpoint_dir,
         logger=logger,
@@ -457,6 +473,18 @@ def parse_args() -> argparse.Namespace:
         help="Regenerate datasets.",
     )
 
+    parser.add_argument(
+        "--dataset-mode",
+        choices=["auto", "create", "existing"],
+        default="auto",
+    )
+
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=Path("datasets"),
+    )
+
     args = parser.parse_args()
     if args.config is None:
         args.train_config = args.train_config or default_narrowband_config("train")
@@ -548,6 +576,8 @@ if __name__ == "__main__":
         persistent_workers=args.persistent_workers,
         precision=args.precision,
         storage_backend=args.storage_backend,
+        dataset_mode=args.dataset_mode,
+        dataset_root=args.dataset_root,
     )
 
     module_logger.info(f"Final Val F1: {result['metrics'].val_f1s[-1]:.4f}")

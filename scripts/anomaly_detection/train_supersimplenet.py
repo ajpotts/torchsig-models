@@ -26,7 +26,10 @@ from anomalib.pre_processing import PreProcessor
 from anomalib.engine import Engine
 from anomalib.models import Supersimplenet
 
-from torchsig_models.adapters.anomalib_utils import TorchSigAnomalibDataModule
+from torchsig_models.adapters.anomalib_utils import (
+    TorchSigAnomalibDataModule,
+    write_anomalib_checkpoint_metadata,
+)
 
 
 set_float32_matmul_precision("high")
@@ -141,6 +144,18 @@ def main():
 
     # Training
     engine.train(model=model, datamodule=train_dm)
+    checkpoint_path = engine.trainer.checkpoint_callback.best_model_path
+    write_anomalib_checkpoint_metadata(
+        checkpoint_path,
+        model_name="SuperSimpleNet",
+        model_parameters=cfg["model"],
+        preprocessing={
+            "input_size": [256, 256],
+            "normalization_mean": [0.485, 0.456, 0.406],
+            "normalization_std": [0.229, 0.224, 0.225],
+        },
+        postprocessing="anomalib_default",
+    )
 
     # Evaluation
 
@@ -166,7 +181,7 @@ def main():
     test_results = engine.test(
         model = model, 
         datamodule = eval_dm,
-        ckpt_path = engine.trainer.checkpoint_callback.best_model_path,
+        ckpt_path = checkpoint_path,
     )
     with open(Path(output_dir) / "results" / "test_results.json", "w") as f:
         json.dump(test_results, f, indent=4)

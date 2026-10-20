@@ -6,6 +6,41 @@ import torch
 from ultralytics import YOLO
 
 from torchsig_models.adapters.yolo_utils import get_yolo_model
+from torchsig_models.utils.checkpoint_metadata import (
+    build_checkpoint_metadata,
+    write_checkpoint_metadata_sidecar,
+)
+
+
+def _write_yolo_checkpoint_metadata(
+    *,
+    model_filepath: Path,
+    output_dir: Path,
+    run_name: str,
+    fft_size: int,
+) -> None:
+    """Write metadata sidecars for every checkpoint produced by Ultralytics."""
+    metadata = build_checkpoint_metadata(
+        model_family="ultralytics-yolo",
+        model_name=model_filepath.stem,
+        input_representation="spectrogram",
+        input_channels=3,
+        num_classes=1,
+        class_names=["signal"],
+        preprocessing={
+            "transform": "TorchSig spectrogram to YOLO image",
+            "image_size": [fft_size, fft_size],
+            "channel_order": "BGR",
+            "value_domain": "uint8_0_255",
+            "normalization": "per_image_minmax_then_invert",
+        },
+        postprocessing="non_max_suppression",
+    )
+    weights_dir = output_dir / run_name / "weights"
+    if not weights_dir.exists():
+        return
+    for checkpoint_path in weights_dir.glob("*.pt"):
+        write_checkpoint_metadata_sidecar(checkpoint_path, metadata)
 
 
 def yolo_train(
@@ -56,4 +91,10 @@ def yolo_train(
         box=7.5,
         cls=0.5,
         dfl=1.5,
+    )
+    _write_yolo_checkpoint_metadata(
+        model_filepath=model_filepath,
+        output_dir=output_dir,
+        run_name=run_name,
+        fft_size=fft_size,
     )
