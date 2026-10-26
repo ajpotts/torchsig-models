@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +14,7 @@ import cv2
 import numpy as np
 import torch
 import yaml
+from dotenv import load_dotenv
 from torchsig.datasets.datasets import TorchSigDatasetConfig
 from torchsig.transforms.metadata_transforms import YOLOLabel
 from torchsig.transforms.transforms import Spectrogram
@@ -121,17 +123,37 @@ def spectrogram_to_uint8(
     return np.rint(encoded).astype(np.uint8)
 
 
-def _write_labels(path: Path, objects: Iterable[Sequence[float]]) -> None:
-    lines: list[str] = []
-    for obj in objects:
-        if len(obj) != 5:
-            raise ValueError(f"Expected a five-value YOLO label, got {obj!r}.")
-        class_id, center_x, center_y, width, height = obj
+def _write_labels(
+    path: Path,
+    objects: Any,
+) -> None:
+    """Write single-object or multi-object YOLO annotations."""
+    if objects is None:
+        boxes = np.empty((0, 5), dtype=np.float64)
+    else:
+        boxes = np.asarray(objects, dtype=np.float64)
+
+        if boxes.size == 0:
+            boxes = np.empty((0, 5), dtype=np.float64)
+        elif boxes.ndim == 1 and boxes.shape[0] == 5:
+            boxes = boxes.reshape(1, 5)
+        elif boxes.ndim != 2 or boxes.shape[1] != 5:
+            raise ValueError(
+                f"Expected YOLO labels of shape (5,) or (N, 5), "
+                f"got {boxes.shape}."
+            )
+
+    lines = []
+    for class_id, center_x, center_y, width, height in boxes:
         lines.append(
-            f"{int(class_id)} {float(center_x):.9g} {float(center_y):.9g} "
-            f"{float(width):.9g} {float(height):.9g}"
+            f"{int(class_id)} {center_x:.9g} {center_y:.9g} "
+            f"{width:.9g} {height:.9g}"
         )
-    path.write_text("\n".join(lines), encoding="utf-8")
+
+    path.write_text(
+        "\n".join(lines) + ("\n" if lines else ""),
+        encoding="utf-8",
+    )
 
 
 def export_ultralytics_dataset(
@@ -435,6 +457,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=_parse_device)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--env-file", type=Path, default=Path(".env"))
+    parser.add_argument("--enable-mlflow", action="store_true")
+    parser.add_argument("--mlflow-timeout", type=int, default=5)
+    parser.add_argument("--mlflow-max-retries", type=int, default=0)
     args = parser.parse_args()
     if args.dataset_config is None and args.train_config is None:
         parser.error("one of --dataset-config or --train-config is required")
@@ -480,21 +506,57 @@ def main() -> None:
     if args.batch_size is not None:
         params["batch_size"] = args.batch_size
     run_dir = args.output_dir / train_cfg.dataset_id / args.model
-    result = train_detr(
-        train_cfg,
-        val_cfg,
-        test_cfg,
-        params,
-        run_dir,
-        dataset_root=args.dataset_root,
-        overwrite=args.overwrite,
-        model_name=args.model,
-        signal_generators=args.signal_generators,
-        dataset_mode="existing" if args.existing_datasets else "auto",
-        storage_backend=args.storage_backend,
-        device=args.device,
-        workers=args.workers,
-    )
+    if args.enable_mlflow:
+        if args.env_file.exists():
+            load_dotenv(args.env_file)
+        # Configure the MLflow HTTP client before importing MLflow.
+        os.environ["MLFLOW_HTTP_REQUEST_TIMEOUT"] = str(args.mlflow_timeout)
+        os.environ["MLFLOW_HTTP_REQUEST_MAX_RETRIES"] = str(args.mlflow_max_retries)
+        import mlflow
+
+        mlflow.set_experiment("rtdetr_training")
+        with mlflow.start_run(run_name=f"{train_cfg.dataset_id}_{args.model}"):
+            mlflow.log_params({
+                "model_name": args.model,
+                "dataset_id": train_cfg.dataset_id,
+                **{key: value for key, value in params.items()
+                   if isinstance(value, (str, int, float, bool))},
+            })
+            result = train_detr(
+                train_cfg, val_cfg, test_cfg, params, run_dir,
+                dataset_root=args.dataset_root,
+                overwrite=args.overwrite,
+                model_name=args.model,
+                signal_generators=args.signal_generators,
+                dataset_mode="existing" if args.existing_datasets else "auto",
+                storage_backend=args.storage_backend,
+                device=args.device,
+                workers=args.workers,
+            )
+            for prefix, summary in (("val", result["val_summary"]),
+                                    ("test", result["test_summary"])):
+                if summary is not None:
+                    mlflow.log_metrics({f"{prefix}_{key}": float(value)
+                                        for key, value in summary.items()})
+            mlflow.log_artifact(str(run_dir / "training_metadata.yaml"))
+            mlflow.log_artifact(str(run_dir / "metrics.json"))
+            mlflow.log_artifact(result["best_checkpoint"], artifact_path="checkpoints")
+    else:
+        result = train_detr(
+            train_cfg,
+            val_cfg,
+            test_cfg,
+            params,
+            run_dir,
+            dataset_root=args.dataset_root,
+            overwrite=args.overwrite,
+            model_name=args.model,
+            signal_generators=args.signal_generators,
+            dataset_mode="existing" if args.existing_datasets else "auto",
+            storage_backend=args.storage_backend,
+            device=args.device,
+            workers=args.workers,
+        )
     print(
         json.dumps(
             {"validation": result["val_summary"], "test": result["test_summary"]},
