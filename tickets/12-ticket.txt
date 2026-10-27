@@ -1,0 +1,3 @@
+https://lightning.ai/docs/pytorch/stable/core-api/trainer#profiler
+found this param in the pytorch lightning trainer, might be helpful benchmarking and finding bottlenecks
+
