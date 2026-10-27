@@ -1,0 +1,46 @@
+#39: Add reusable TorchSig-to-YOLO dataset export utilities
+
+Summary
+Add reusable utilities for exporting TorchSig datasets into an Ultralytics-compatible YOLO dataset.
+Motivation
+Projects using TorchSig models currently need project-specific code to convert TorchSig spectrogram datasets into the directory and annotation structure expected by YOLO.
+The mechanics of writing YOLO images, annotation files, and dataset metadata are not application-specific and would be more reusable in torchsig-models.
+TorchSig should remain responsible for signal metadata and detection annotations, while torchsig-models handles model-framework-specific serialization.
+Proposed Change
+Add a YOLO dataset export utility, for example under:
+torchsig_models/ datasets/ yolo.py
+with reusable functionality such as:
+dataset_to_yolo(...) write_data_yaml(...)
+The exporter should accept a dataset that produces an image/spectrogram and YOLO-compatible detection targets and write the appropriate Ultralytics dataset structure.
+Expected Output
+For example:
+output/ ├── images/ │   ├── train/ │   ├── val/ │   └── test/ ├── labels/ │   ├── train/ │   ├── val/ │   └── test/ └── data.yaml
+Acceptance Criteria
+
+
+        
+      Export TorchSig-derived image datasets to YOLO image and label files.
+
+        
+      Support train, validation, and test splits.
+
+        
+      Write an Ultralytics-compatible data.yaml.
+
+        
+      Correctly construct and validate the class-name-to-index mapping.
+
+        
+      Detect conflicting class mappings rather than silently overwriting them.
+
+        
+      Support grouped labels supplied by TorchSig.
+
+        
+      Support configurable worker counts for export.
+
+        
+      Surface worker/export exceptions to the caller.
+
+        
+      Include unit tests and a small end-to-end conversion test.

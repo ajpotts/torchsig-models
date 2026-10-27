@@ -1,0 +1,47 @@
+#58: Extend Existing Dataset CLI Support to All TorchSig Models
+
+Summary
+Extend the existing-dataset command-line functionality introduced for EfficientNet-1D to all applicable model training entry points in torchsig-models.
+Ensure that all models can train using previously generated TorchSig datasets without requiring dataset regeneration or modifications to training scripts.
+Problem
+Ticket 1 introduces --dataset-mode and --dataset-root arguments for EfficientNet-1D training.
+Other model training scripts may have similar limitations, resulting in inconsistent dataset handling across architectures.
+This makes it unnecessarily difficult to compare models using the same datasets and training conditions.
+Proposed Changes
+
+
+        
+      Audit all model training entry points, including IQ classifiers, spectrogram classifiers, and object detection models.
+
+        
+      Standardize the following CLI arguments wherever applicable:
+
+
+        
+      --dataset-mode: auto, create, or existing
+
+        
+      --dataset-root: Path to existing or generated datasets
+
+        
+      --storage-backend: legacy, packed, or homogeneous
+
+        
+      --dataset-length: Optional limit on samples per split
+
+
+
+        
+      Forward these arguments consistently to shared dataset preparation utilities.
+
+        
+      Reuse existing dataset-loading functionality rather than implementing model-specific loading logic.
+
+        
+      Ensure existing mode never invokes dataset generation.
+
+        
+      Preserve backward compatibility with existing CLI defaults and YAML configurations.
+
+        
+      Update model training documentation with examples using existing datasets.

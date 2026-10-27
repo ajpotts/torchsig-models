@@ -1,0 +1,65 @@
+#40 : Add config-driven TorchSig-to-YOLO conversion CLI
+
+Summary
+Add a command-line workflow in torchsig-models for converting a static TorchSig dataset into a YOLO dataset using a reproducible YAML configuration.
+Motivation
+YOLO dataset preparation requires several related settings, including spectrogram parameters, dataset splits, random seed, export workers, and label/grouping behavior.
+Keeping these settings in a configuration file makes conversions reproducible while command-line overrides remain useful for experimentation.
+A generic implementation belongs in torchsig-models rather than individual downstream projects.
+Proposed Interface
+For example:
+torchsig-to-yolo \ --config configs/yolo_conversion.yaml
+Individual command-line options should override values loaded from the configuration:
+torchsig-to-yolo \ --config configs/yolo_conversion.yaml \ --fft-size 2048 \ --workers 4
+Precedence should be:
+explicit CLI argument ↓ configuration value ↓ default
+The CLI should use the reusable YOLO export functionality rather than implementing a second export path.
+Configuration
+The configuration should support at least:
+
+
+        
+      input and output paths
+
+        
+      FFT size and stride
+
+        
+      train/validation/test splitting
+
+        
+      random seed
+
+        
+      worker count
+
+        
+      optional TorchSig grouping configuration
+
+Grouping should use TorchSig's GroupingLabel abstraction rather than implementing family-specific logic in torchsig-models.
+Acceptance Criteria
+
+
+        
+      Conversion can be completely specified by YAML configuration.
+
+        
+      Individual CLI arguments override corresponding configuration values.
+
+        
+      CLI defaults do not accidentally override configured values.
+
+        
+      Train/validation/test splits are deterministic for a fixed seed.
+
+        
+      Invalid split fractions and transform parameters are rejected.
+
+        
+      Supports ungrouped and grouped TorchSig detection labels.
+
+        
+      Uses the common YOLO export utilities.
+
+        
+      Includes tests for configuration loading, defaults, CLI precedence, validation, and deterministic splitting.
